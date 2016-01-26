@@ -14,6 +14,15 @@ pub struct HoleList {
 }
 
 impl HoleList {
+    pub const fn empty() -> HoleList {
+        HoleList {
+            first: Hole {
+                size: 0,
+                next: None,
+            },
+        }
+    }
+
     pub unsafe fn new(ptr: *mut Hole, size: usize) -> HoleList {
         assert!(size_of::<Hole>() == Self::min_size());
 

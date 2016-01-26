@@ -1,4 +1,5 @@
 #![feature(unique)]
+#![feature(const_fn)]
 #![no_std]
 
 #[cfg(test)]
@@ -16,6 +17,14 @@ pub struct Heap {
 }
 
 impl Heap {
+    pub const fn empty() -> Heap {
+        Heap {
+            top: 0,
+            bottom: 0,
+            holes: HoleList::empty(),
+        }
+    }
+
     pub fn new(heap_bottom: usize, heap_top: usize) -> Heap {
         Heap {
             bottom: heap_bottom,
@@ -38,11 +47,11 @@ impl Heap {
         }
         self.holes.deallocate(ptr, size);
     }
-    
+
     pub fn bottom(&self) -> usize {
         self.bottom
     }
-    
+
     pub fn top(&self) -> usize {
         self.top
     }
