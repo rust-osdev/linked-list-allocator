@@ -1,91 +1,164 @@
 use core::ptr::Unique;
 use core::mem::{self, size_of};
-use core::intrinsics;
+
+#[cfg(not(test))]
+macro_rules! println {
+    ($fmt:expr) => {  };
+    ($fmt:expr, $($arg:tt)*) => {  };
+}
 
 use super::align_up;
+
+pub struct HoleList {
+    first: Hole, // dummy
+}
+
+impl HoleList {
+    pub unsafe fn new(ptr: *mut Hole, size: usize) -> HoleList {
+        assert!(size_of::<Hole>() == Self::min_size());
+
+        mem::forget(mem::replace(&mut *ptr,
+                                 Hole {
+                                     size: size,
+                                     next: None,
+                                 }));
+
+        HoleList {
+            first: Hole {
+                size: 0,
+                next: Some(Unique::new(ptr)),
+            },
+        }
+    }
+
+    pub fn allocate_first_fit(&mut self, size: usize, align: usize) -> Option<*mut u8> {
+        println!("allocate {} bytes (align {})", size, align);
+        assert!(size >= Self::min_size());
+
+        if let Some((start_addr, front_padding, back_padding)) =
+               allocate_first_fit(&mut self.first, size, align) {
+            if let Some((padding_addr, padding_size)) = front_padding {
+                self.deallocate(padding_addr as *mut u8, padding_size)
+            }
+            if let Some((padding_addr, padding_size)) = back_padding {
+                self.deallocate(padding_addr as *mut u8, padding_size)
+            }
+            Some(start_addr as *mut u8)
+        } else {
+            None
+        }
+    }
+
+    pub fn deallocate(&mut self, ptr: *mut u8, size: usize) {
+        println!("deallocate {:p} ({} bytes)", ptr, size);
+        assert!(size >= Self::min_size());
+
+        deallocate(&mut self.first, ptr as usize, size)
+    }
+
+    pub fn min_size() -> usize {
+        size_of::<usize>() * 2
+    }
+
+    #[cfg(test)]
+    pub fn first_hole(&self) -> Option<(usize, usize)> {
+        if let Some(first) = self.first.next.as_ref() {
+            Some((**first as usize, unsafe { first.get().size }))
+        } else {
+            None
+        }
+    }
+}
 
 pub struct Hole {
     pub size: usize,
     pub next: Option<Unique<Hole>>,
 }
 
-impl Hole {
-    // Returns the first hole that is big enough starting at the **next** hole. The reason is that
-    // it is implemented as a single linked list (we need to update the previous pointer). So even
-    // if _this_ hole would be large enough, it won't be used.
-    pub fn get_first_fit(&mut self, size: usize, align: usize) -> Option<Unique<Hole>> {
-        assert!(size % size_of::<usize>() == 0);
-        // align must be a power of two
-        assert!(unsafe { intrinsics::ctpop(align) } == 1); // exactly one bit set
+fn allocate_first_fit(previous: &mut Hole,
+                      size: usize,
+                      align: usize)
+                      -> Option<(usize, Option<(usize, usize)>, Option<(usize, usize)>)> {
+    let mut front_padding = None;
+    let mut back_padding = None;
 
-        // take the next hole and set `self.next` to None
-        match self.next.take() {
-            None => None,
-            Some(mut next) => {
-                let next_addr = *next as usize;
-                let start_addr = align_up(next_addr, align);
+    if previous.next.is_some() {
+        let hole_addr = **previous.next.as_ref().unwrap() as usize;
+        let aligned_hole_addr = align_up(hole_addr, align);
 
-                // the needed padding for the desired alignment
-                let padding = start_addr - next_addr;
-                assert!(padding == 0 || padding >= size_of::<usize>() * 2); // TODO
-                let next_real_size = unsafe { next.get() }.size - padding;
-
-                if next_real_size == size {
-                    let next_next: Option<Unique<_>> = unsafe { next.get_mut() }.next.take();
-                    self.next = next_next;
-                    Some(next)
-                } else if next_real_size > size {
-                    let next_next: Option<Unique<_>> = unsafe { next.get_mut() }.next.take();
-                    let new_hole = Hole {
-                        size: next_real_size - size,
-                        next: next_next,
-                    };
-                    unsafe {
-                        let mut new_hole_ptr = Unique::new((start_addr + size) as *mut Hole);
-                        mem::forget(mem::replace(new_hole_ptr.get_mut(), new_hole));
-                        self.next = Some(new_hole_ptr);
-                    }
-                    Some(next)
-                } else {
-                    let ret = unsafe { next.get_mut().get_first_fit(size, align) };
-                    self.next = Some(next);
-                    ret
-                }
-            }
-        }
-    }
-
-    pub fn add_hole(&mut self, mut hole: Unique<Hole>) {
-        unsafe {
-            if hole.get().size == 0 {
-                return;
-            }
-            assert!(hole.get().size % size_of::<usize>() == 0);
-            assert!(hole.get().next.is_none());
-        }
-
-        let hole_addr = *hole as usize;
-
-        if self.next.as_mut().map_or(false, |n| hole_addr < **n as usize) {
-            // hole is before start of next hole or this is the last hole
-            let self_addr = self as *mut _ as usize;
-
-            if hole_addr == self_addr + self.size {
-                // new hole is right behind this hole, so we can just increase this's size
-                self.size += unsafe { hole.get().size };
+        if aligned_hole_addr > hole_addr {
+            if aligned_hole_addr < hole_addr + HoleList::min_size() {
+                // hole would cause a new, too small hole. try next hole
+                return allocate_first_fit(unsafe { previous.next.as_mut().unwrap().get_mut() },
+                                          size,
+                                          align);
             } else {
-                // insert the hole behind this hole
-                unsafe { hole.get_mut() }.next = self.next.take();
-                self.next = Some(hole);
+                let padding_hole_size = aligned_hole_addr - hole_addr;
+                front_padding = Some((hole_addr, padding_hole_size));
             }
-        } else {
-            // hole is behind next hole
-            assert!(self.next.is_some());
-            let next = self.next.as_mut().unwrap();
-            assert!(hole_addr > **next as usize);
-
-            // insert it behind next hole
-            unsafe { next.get_mut().add_hole(hole) };
         }
+
+        let aligned_hole_size = unsafe { previous.next.as_ref().unwrap().get().size } -
+                                (aligned_hole_addr - hole_addr);
+
+        if aligned_hole_size > size {
+            if aligned_hole_size - size < HoleList::min_size() {
+                // hole would cause a new, too small hole. try next hole
+                return allocate_first_fit(unsafe { previous.next.as_mut().unwrap().get_mut() },
+                                          size,
+                                          align);
+            } else {
+                let padding_hole_size = aligned_hole_size - size;
+                back_padding = Some((aligned_hole_addr + size, padding_hole_size));
+            }
+        }
+
+        if aligned_hole_size >= size {
+            previous.next = unsafe { previous.next.as_mut().unwrap().get_mut().next.take() };
+            Some((aligned_hole_addr, front_padding, back_padding))
+        } else {
+            // hole is too small, try next hole
+            return allocate_first_fit(unsafe { previous.next.as_mut().unwrap().get_mut() },
+                                      size,
+                                      align);
+        }
+    } else {
+        None
+    }
+}
+
+fn deallocate(hole: &mut Hole, addr: usize, size: usize) {
+    let hole_addr = if hole.size == 0 {
+        0   // dummy
+    } else {
+        hole as *mut _ as usize
+    };
+    assert!(addr >= hole_addr + hole.size);
+
+    if hole.next.is_some() && addr + size == **hole.next.as_ref().unwrap() as usize {
+        // it is right before the the next hole -> delete the next hole and free the joined block
+        println!("1");
+        let next_hole_next = unsafe { hole.next.as_mut().unwrap().get_mut() }.next.take();
+        let next_hole_size = unsafe { hole.next.as_ref().unwrap().get() }.size;
+        hole.next = next_hole_next;
+        deallocate(hole, addr, size + next_hole_size);
+    } else if hole.next.is_some() && addr >= **hole.next.as_ref().unwrap() as usize {
+        // it is behind the next hole -> delegate to next hole
+        println!("2");
+        deallocate(unsafe { hole.next.as_mut().unwrap().get_mut() }, addr, size);
+    } else if addr == hole_addr + hole.size {
+        // the freed block is right behind this hole -> just increase the size
+        println!("3");
+        hole.size += size;
+    } else {
+        // the freed block is before the next hole (or this is the last hole)
+        println!("4");
+        let new_hole = Hole {
+            size: size,
+            next: hole.next.take(),
+        };
+        let ptr = addr as *mut Hole;
+        mem::forget(mem::replace(unsafe { &mut *ptr }, new_hole));
+        hole.next = Some(unsafe { Unique::new(ptr) });
     }
 }

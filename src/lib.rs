@@ -1,104 +1,50 @@
-#![feature(const_fn)]
 #![feature(unique)]
-#![feature(core_intrinsics)]
 #![no_std]
 
 #[cfg(test)]
 #[macro_use]
 extern crate std;
 
-use core::ptr::Unique;
-use core::mem::{self, size_of};
-
-use hole::Hole;
-use small_hole::SmallHole;
+use hole::HoleList;
 
 mod hole;
-mod small_hole;
 
 pub struct Heap {
-    holes: Hole, // dummy
-    small_holes: SmallHole, // dummy
+    bottom: usize,
+    top: usize,
+    holes: HoleList,
 }
 
 impl Heap {
-    pub const fn empty() -> Heap {
-        Heap {
-            holes: Hole {
-                size: 0,
-                next: None,
-            },
-            small_holes: SmallHole { next: None },
-        }
-    }
-
     pub fn new(heap_bottom: usize, heap_top: usize) -> Heap {
-        assert!(size_of::<SmallHole>() == size_of::<usize>());
-        assert!(size_of::<Hole>() == size_of::<usize>() * 2);
-
-        let first_hole = Hole {
-            size: heap_top - heap_bottom,
-            next: None,
-        };
-
-        let mut first_hole_ptr = unsafe { Unique::new(heap_bottom as *mut Hole) };
-        unsafe { mem::forget(mem::replace(first_hole_ptr.get_mut(), first_hole)) };
-
-        let mut heap = Heap::empty();
-        heap.holes.next = Some(first_hole_ptr);
-        heap
+        Heap {
+            bottom: heap_bottom,
+            top: heap_top,
+            holes: unsafe { HoleList::new(heap_bottom as *mut _, heap_top - heap_bottom) },
+        }
     }
 
     pub fn allocate_first_fit(&mut self, mut size: usize, align: usize) -> Option<*mut u8> {
-        size = align_up(size, size_of::<usize>());
-        let mut ret = None;
-
-        if size == size_of::<SmallHole>() {
-            ret = ret.or_else(|| {
-                self.small_holes.get_first_fit(align).map(|hole| {
-                    let hole_start_addr = *hole as usize;
-                    assert!(hole_start_addr % align == 0);
-                    hole_start_addr as *mut u8
-                })
-            });
+        if size < HoleList::min_size() {
+            size = HoleList::min_size();
         }
 
-        ret = ret.or_else(|| {
-            self.holes.get_first_fit(size, align).map(|hole| {
-                let hole_start_addr = *hole as usize;
-                let aligned_address = align_up(hole_start_addr, align);
-                let padding = aligned_address - hole_start_addr;
-                if padding > 0 {
-                    assert!(unsafe { hole.get().size } - padding >= size);
-                    self.deallocate(*hole as *mut u8, padding, 1);
-                }
-                aligned_address as *mut u8
-            })
-        });
-        
-        ret
+        self.holes.allocate_first_fit(size, align)
     }
 
     pub fn deallocate(&mut self, ptr: *mut u8, mut size: usize, _align: usize) {
-        if size <= size_of::<SmallHole>() {
-            let hole = SmallHole { next: None };
-            let mut hole_ptr = unsafe { Unique::new(ptr as *mut SmallHole) };
-            unsafe { mem::forget(mem::replace(hole_ptr.get_mut(), hole)) };
-
-            self.small_holes.add_hole(hole_ptr);
-        } else {
-            if size < size_of::<Hole>() {
-                size = size_of::<Hole>();
-            }
-            let hole = Hole {
-                size: size,
-                next: None,
-            };
-            let mut hole_ptr = unsafe { Unique::new(ptr as *mut Hole) };
-            unsafe { mem::forget(mem::replace(hole_ptr.get_mut(), hole)) };
-
-            self.holes.add_hole(hole_ptr);
+        if size < HoleList::min_size() {
+            size = HoleList::min_size();
         }
+        self.holes.deallocate(ptr, size);
+    }
+    
+    pub fn bottom(&self) -> usize {
+        self.bottom
+    }
+    
+    pub fn top(&self) -> usize {
+        self.top
     }
 }
 
@@ -115,20 +61,36 @@ mod test {
     use std::prelude::v1::*;
     use std::mem::{size_of, align_of};
     use super::*;
+    use super::hole::*;
 
     fn new_heap() -> Heap {
         const HEAP_SIZE: usize = 1000;
-        let dummy = Box::into_raw(Box::new([0u8; HEAP_SIZE]));
+        let heap_space = Box::into_raw(Box::new([0u8; HEAP_SIZE]));
 
-        let heap_bottom = dummy as usize;
+        let heap_bottom = heap_space as usize;
         let heap_top = heap_bottom + HEAP_SIZE;
-        Heap::new(heap_bottom, heap_top)
+        let heap = Heap::new(heap_bottom, heap_top);
+        assert!(heap.bottom == heap_bottom);
+        assert!(heap.top == heap_top);
+        heap
     }
 
     #[test]
     fn allocate_double_usize() {
         let mut heap = new_heap();
-        assert!(heap.allocate_first_fit(size_of::<usize>() * 2, align_of::<usize>()).is_some());
+        let size = size_of::<usize>() * 2;
+        let addr = heap.allocate_first_fit(size, align_of::<usize>());
+        assert!(addr.is_some());
+        let addr = addr.unwrap() as usize;
+        assert!(addr == heap.bottom);
+        let (hole_addr, hole_size) = heap.holes.first_hole().expect("ERROR: no hole left");
+        assert!(hole_addr == heap.bottom + size);
+        assert!(hole_size == heap.top - heap.bottom - size);
+
+        unsafe {
+            assert_eq!((*((addr + size) as *const Hole)).size,
+                       heap.top - heap.bottom - size);
+        }
     }
 
     #[test]
@@ -140,6 +102,86 @@ mod test {
             *(x as *mut (usize, usize)) = (0xdeafdeadbeafbabe, 0xdeafdeadbeafbabe);
         }
         heap.deallocate(x, size_of::<usize>() * 2, align_of::<usize>());
+
+        unsafe {
+            assert_eq!((*(heap.bottom as *const Hole)).size, heap.top - heap.bottom);
+            assert!((*(heap.bottom as *const Hole)).next.is_none());
+        }
+    }
+
+    #[test]
+    fn deallocate_right_before() {
+        let mut heap = new_heap();
+        let size = size_of::<usize>() * 5;
+
+        let x = heap.allocate_first_fit(size, 1).unwrap();
+        let y = heap.allocate_first_fit(size, 1).unwrap();
+        let z = heap.allocate_first_fit(size, 1).unwrap();
+
+        heap.deallocate(y, size, 1);
+        unsafe {
+            assert_eq!((*(y as *const Hole)).size, size);
+        }
+        heap.deallocate(x, size, 1);
+        unsafe {
+            assert_eq!((*(x as *const Hole)).size, size * 2);
+        }
+        heap.deallocate(z, size, 1);
+        unsafe {
+            assert_eq!((*(x as *const Hole)).size, heap.top - heap.bottom);
+        }
+    }
+
+    #[test]
+    fn deallocate_right_behind() {
+        let mut heap = new_heap();
+        let size = size_of::<usize>() * 5;
+
+        let x = heap.allocate_first_fit(size, 1).unwrap();
+        let y = heap.allocate_first_fit(size, 1).unwrap();
+        let z = heap.allocate_first_fit(size, 1).unwrap();
+
+        heap.deallocate(x, size, 1);
+        unsafe {
+            assert_eq!((*(x as *const Hole)).size, size);
+        }
+        heap.deallocate(y, size, 1);
+        unsafe {
+            assert_eq!((*(x as *const Hole)).size, size * 2);
+        }
+        heap.deallocate(z, size, 1);
+        unsafe {
+            assert_eq!((*(x as *const Hole)).size, heap.top - heap.bottom);
+        }
+    }
+
+    #[test]
+    fn deallocate_middle() {
+        let mut heap = new_heap();
+        let size = size_of::<usize>() * 5;
+
+        let x = heap.allocate_first_fit(size, 1).unwrap();
+        let y = heap.allocate_first_fit(size, 1).unwrap();
+        let z = heap.allocate_first_fit(size, 1).unwrap();
+        let a = heap.allocate_first_fit(size, 1).unwrap();
+
+        heap.deallocate(x, size, 1);
+        unsafe {
+            assert_eq!((*(x as *const Hole)).size, size);
+        }
+        heap.deallocate(z, size, 1);
+        unsafe {
+            assert_eq!((*(x as *const Hole)).size, size);
+            assert_eq!((*(z as *const Hole)).size, size);
+        }
+        heap.deallocate(y, size, 1);
+        unsafe {
+            assert_eq!((*(x as *const Hole)).size, size * 3);
+        }
+        heap.deallocate(a, size, 1);
+        unsafe {
+            assert_eq!((*(x as *const Hole)).size, heap.top - heap.bottom);
+        }
     }
 
     #[test]
@@ -185,21 +227,21 @@ mod test {
 
         assert!(heap.allocate_first_fit(size_of::<usize>(), 1).is_some());
     }
-    
-    
+
+
     #[test]
     fn allocate_usize_in_bigger_block() {
         let mut heap = new_heap();
 
-        let x = heap.allocate_first_fit(size_of::<usize>() * 2, 1).unwrap();        
+        let x = heap.allocate_first_fit(size_of::<usize>() * 2, 1).unwrap();
         let y = heap.allocate_first_fit(size_of::<usize>() * 2, 1).unwrap();
         heap.deallocate(x, size_of::<usize>() * 2, 1);
-        
+
         let z = heap.allocate_first_fit(size_of::<usize>(), 1);
         assert!(z.is_some());
         let z = z.unwrap();
         assert_eq!(x, z);
-        
+
         heap.deallocate(y, size_of::<usize>() * 2, 1);
         heap.deallocate(z, size_of::<usize>(), 1);
     }
