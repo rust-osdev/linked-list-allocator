@@ -144,30 +144,59 @@ fn deallocate(hole: &mut Hole, addr: usize, size: usize) {
     };
     assert!(addr >= hole_addr + hole.size);
 
-    if hole.next.is_some() && addr + size == **hole.next.as_ref().unwrap() as usize {
-        // it is right before the the next hole -> delete the next hole and free the joined block
-        println!("1");
-        let next_hole_next = unsafe { hole.next.as_mut().unwrap().get_mut() }.next.take();
-        let next_hole_size = unsafe { hole.next.as_ref().unwrap().get() }.size;
-        hole.next = next_hole_next;
-        deallocate(hole, addr, size + next_hole_size);
-    } else if hole.next.is_some() && addr >= **hole.next.as_ref().unwrap() as usize {
-        // it is behind the next hole -> delegate to next hole
-        println!("2");
-        deallocate(unsafe { hole.next.as_mut().unwrap().get_mut() }, addr, size);
-    } else if addr == hole_addr + hole.size {
-        // the freed block is right behind this hole -> just increase the size
-        println!("3");
-        hole.size += size;
-    } else {
-        // the freed block is before the next hole (or this is the last hole)
-        println!("4");
-        let new_hole = Hole {
-            size: size,
-            next: hole.next.take(),
-        };
-        let ptr = addr as *mut Hole;
-        mem::forget(mem::replace(unsafe { &mut *ptr }, new_hole));
-        hole.next = Some(unsafe { Unique::new(ptr) });
+
+
+    match mem::replace(&mut hole.next, None) {
+        Some(ref mut next) if addr == hole_addr + hole.size && addr + size == **next as usize => {
+            // block fills the gap between this hole and the next hole
+            // before:  ___XXX____YYYYY____    where X is this hole and Y the next hole
+            // after:   ___XXXFFFFYYYYY____    where F is the freed block
+            hole.size += size + unsafe { next.get().size };
+            hole.next = unsafe { next.get_mut() }.next.take();
+        }
+        Some(ref next) if addr == hole_addr + hole.size => {
+            // block is right behind this hole but there is used memory after it
+            // before:  ___XXX______YYYYY____    where X is this hole and Y the next hole
+            // after:   ___XXXFFFF__YYYYY____    where F is the freed block
+            hole.size += size;
+
+            // hole.next should stay the same
+            hole.next = Some(unsafe { Unique::new(**next) }); //hack to avoid implementing clone
+        }
+        Some(ref mut next) if addr + size == **next as usize => {
+            // block is right before the next hole but there is used memory before it
+            // before:  ___XXX______YYYYY____    where X is this hole and Y the next hole
+            // after:   ___XXX__FFFFYYYYY____    where F is the freed block
+            let next_hole_next = unsafe { next.get_mut() }.next.take();
+            let next_hole_size = unsafe { next.get() }.size;
+            hole.next = next_hole_next; // delete next block
+            deallocate(hole, addr, size + next_hole_size); // free it again as a big block
+        }
+        Some(ref mut next) if addr >= **next as usize => {
+            // block is behind the next hole, so we delegate it to the next hole
+            // before:  ___XXX__YYYYY________    where X is this hole and Y the next hole
+            // after:   ___XXX__YYYYY__FFFF__    where F is the freed block
+
+            // hole.next should stay the same
+            hole.next = Some(unsafe { Unique::new(**next) }); // hack to avoid implementing clone
+            deallocate(unsafe { next.get_mut() }, addr, size);
+        }
+        next => {
+            // block is between this and the next hole
+            // before:  ___XXX________YYYYY_    where X is this hole and Y the next hole
+            // after:   ___XXX__FFFF__YYYYY_    where F is the freed block
+
+            // or: this is the last hole
+            // before:  ___XXX_________    where X is this hole
+            // after:   ___XXX__FFFF___    where F is the freed block
+
+            let new_hole = Hole {
+                size: size,
+                next: next,
+            };
+            let ptr = addr as *mut Hole;
+            mem::forget(mem::replace(unsafe { &mut *ptr }, new_hole));
+            hole.next = Some(unsafe { Unique::new(ptr) });
+        }
     }
 }
