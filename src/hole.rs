@@ -1,12 +1,6 @@
 use core::ptr::Unique;
 use core::mem::{self, size_of};
 
-#[cfg(not(test))]
-macro_rules! println {
-    ($fmt:expr) => {  };
-    ($fmt:expr, $($arg:tt)*) => {  };
-}
-
 use super::align_up;
 
 pub struct HoleList {
@@ -41,11 +35,9 @@ impl HoleList {
     }
 
     pub fn allocate_first_fit(&mut self, size: usize, align: usize) -> Option<*mut u8> {
-        println!("allocate {} bytes (align {})", size, align);
         assert!(size >= Self::min_size());
 
         if let Some(result) = allocate_first_fit(&mut self.first, size, align) {
-            println!("allocated address: {:#x}", result.hole.addr);
             if let Some(HoleInfo{addr: padding_addr, size: padding_size}) = result.front_padding {
                 self.deallocate(padding_addr as *mut u8, padding_size);
             }
