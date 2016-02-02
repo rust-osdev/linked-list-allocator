@@ -1,3 +1,5 @@
 language: rust
 rust:
   - nightly
+
+after_success: cargo doc && sh scripts/travis-doc-upload.sh
