@@ -17,12 +17,13 @@ impl HoleList {
         }
     }
 
-    pub unsafe fn new(ptr: *mut Hole, size: usize) -> HoleList {
+    pub unsafe fn new(hole_addr: usize, hole_size: usize) -> HoleList {
         assert!(size_of::<Hole>() == Self::min_size());
 
+        let ptr = hole_addr as *mut Hole;
         mem::forget(mem::replace(&mut *ptr,
                                  Hole {
-                                     size: size,
+                                     size: hole_size,
                                      next: None,
                                  }));
 
@@ -48,10 +49,7 @@ impl HoleList {
         })
     }
 
-    pub fn deallocate(&mut self, ptr: *mut u8, size: usize) {
-        println!("deallocate {:p} ({} bytes)", ptr, size);
-        assert!(size >= Self::min_size());
-
+    pub unsafe fn deallocate(&mut self, ptr: *mut u8, size: usize) {
         deallocate(&mut self.first, ptr as usize, size)
     }
 

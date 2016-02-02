@@ -25,11 +25,11 @@ impl Heap {
         }
     }
 
-    pub fn new(heap_bottom: usize, heap_top: usize) -> Heap {
+    pub unsafe fn new(heap_bottom: usize, heap_top: usize) -> Heap {
         Heap {
             bottom: heap_bottom,
             top: heap_top,
-            holes: unsafe { HoleList::new(heap_bottom as *mut _, heap_top - heap_bottom) },
+            holes: HoleList::new(heap_bottom, heap_top - heap_bottom),
         }
     }
 
@@ -41,7 +41,7 @@ impl Heap {
         self.holes.allocate_first_fit(size, align)
     }
 
-    pub fn deallocate(&mut self, ptr: *mut u8, mut size: usize, _align: usize) {
+    pub unsafe fn deallocate(&mut self, ptr: *mut u8, mut size: usize, _align: usize) {
         if size < HoleList::min_size() {
             size = HoleList::min_size();
         }
