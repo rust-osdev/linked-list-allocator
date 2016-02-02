@@ -59,14 +59,18 @@ impl HoleList {
 
     #[cfg(test)]
     pub fn first_hole(&self) -> Option<(usize, usize)> {
-        if let Some(first) = self.first.next.as_ref() {
-            Some((**first as usize, unsafe { first.get().size }))
-        } else {
-            None
-        }
+        self.first.next.as_ref().map(|hole| (**hole as usize, unsafe { hole.get().size }))
     }
 }
 
+/// A block containing free memory. It points to the next hole and thus forms a linked list.
+#[cfg(not(test))]
+struct Hole {
+    size: usize,
+    next: Option<Unique<Hole>>,
+}
+
+#[cfg(test)]
 pub struct Hole {
     pub size: usize,
     pub next: Option<Unique<Hole>>,
