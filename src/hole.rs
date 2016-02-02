@@ -44,15 +44,15 @@ impl HoleList {
         println!("allocate {} bytes (align {})", size, align);
         assert!(size >= Self::min_size());
 
-        if let Some((start_addr, front_padding, back_padding)) =
-               allocate_first_fit(&mut self.first, size, align) {
-            if let Some((padding_addr, padding_size)) = front_padding {
-                self.deallocate(padding_addr as *mut u8, padding_size)
+        if let Some(result) = allocate_first_fit(&mut self.first, size, align) {
+            println!("allocated address: {:#x}", result.hole.addr);
+            if let Some(HoleInfo{addr: padding_addr, size: padding_size}) = result.front_padding {
+                self.deallocate(padding_addr as *mut u8, padding_size);
             }
-            if let Some((padding_addr, padding_size)) = back_padding {
-                self.deallocate(padding_addr as *mut u8, padding_size)
+            if let Some(HoleInfo{addr: padding_addr, size: padding_size}) = result.back_padding {
+                self.deallocate(padding_addr as *mut u8, padding_size);
             }
-            Some(start_addr as *mut u8)
+            Some(result.hole.addr as *mut u8)
         } else {
             None
         }
@@ -84,56 +84,92 @@ pub struct Hole {
     pub next: Option<Unique<Hole>>,
 }
 
-fn allocate_first_fit(previous: &mut Hole,
-                      size: usize,
-                      align: usize)
-                      -> Option<(usize, Option<(usize, usize)>, Option<(usize, usize)>)> {
-    let mut front_padding = None;
-    let mut back_padding = None;
-
-    if previous.next.is_some() {
-        let hole_addr = **previous.next.as_ref().unwrap() as usize;
-        let aligned_hole_addr = align_up(hole_addr, align);
-
-        if aligned_hole_addr > hole_addr {
-            if aligned_hole_addr < hole_addr + HoleList::min_size() {
-                // hole would cause a new, too small hole. try next hole
-                return allocate_first_fit(unsafe { previous.next.as_mut().unwrap().get_mut() },
-                                          size,
-                                          align);
-            } else {
-                let padding_hole_size = aligned_hole_addr - hole_addr;
-                front_padding = Some((hole_addr, padding_hole_size));
-            }
+impl Hole {
+    fn info(&self) -> HoleInfo {
+        HoleInfo {
+            addr: self as *const _ as usize,
+            size: self.size,
         }
+    }
+}
 
-        let aligned_hole_size = unsafe { previous.next.as_ref().unwrap().get().size } -
-                                (aligned_hole_addr - hole_addr);
+struct HoleInfo {
+    addr: usize,
+    size: usize,
+}
 
-        if aligned_hole_size > size {
-            if aligned_hole_size - size < HoleList::min_size() {
-                // hole would cause a new, too small hole. try next hole
-                return allocate_first_fit(unsafe { previous.next.as_mut().unwrap().get_mut() },
-                                          size,
-                                          align);
-            } else {
-                let padding_hole_size = aligned_hole_size - size;
-                back_padding = Some((aligned_hole_addr + size, padding_hole_size));
-            }
+struct HoleResult {
+    hole: HoleInfo,
+    front_padding: Option<HoleInfo>,
+    back_padding: Option<HoleInfo>,
+}
+
+fn split_hole(hole: HoleInfo, required_size: usize, required_align: usize) -> Option<HoleResult> {
+    let aligned_hole = {
+        let aligned_hole_addr = align_up(hole.addr, required_align);
+        if aligned_hole_addr + required_size > hole.addr + hole.size {
+            // hole is too small
+            return None;
         }
+        HoleInfo {
+            addr: aligned_hole_addr,
+            size: hole.size - (aligned_hole_addr - hole.addr),
+        }
+    };
 
-        if aligned_hole_size >= size {
-            previous.next = unsafe { previous.next.as_mut().unwrap().get_mut().next.take() };
-            Some((aligned_hole_addr, front_padding, back_padding))
+    let front_padding = if aligned_hole.addr > hole.addr {
+        if aligned_hole.addr < hole.addr + HoleList::min_size() {
+            // hole would cause a new, too small hole
+            return None;
         } else {
-            // hole is too small, try next hole
-            return allocate_first_fit(unsafe { previous.next.as_mut().unwrap().get_mut() },
-                                      size,
-                                      align);
+            Some(HoleInfo {
+                addr: hole.addr,
+                size: aligned_hole.addr - hole.addr,
+            })
         }
     } else {
         None
-    }
+    };
+
+    let back_padding = if aligned_hole.size > required_size {
+        if aligned_hole.size - required_size < HoleList::min_size() {
+            // hole would cause a new, too small hole
+            return None;
+        } else {
+            Some(HoleInfo {
+                addr: aligned_hole.addr + required_size,
+                size: aligned_hole.size - required_size,
+            })
+        }
+    } else {
+        None
+    };
+
+    Some(HoleResult {
+        hole: HoleInfo {
+            addr: aligned_hole.addr,
+            size: required_size,
+        },
+        front_padding: front_padding,
+        back_padding: back_padding,
+    })
+}
+
+fn allocate_first_fit(previous: &mut Hole, size: usize, align: usize) -> Option<HoleResult> {
+
+    previous.next
+            .as_mut()
+            .and_then(|current| split_hole(unsafe { current.get() }.info(), size, align))
+            .map(|result| {
+                previous.next = unsafe { previous.next.as_mut().unwrap().get_mut().next.take() };
+                result
+            })
+            .or_else(|| {
+                // hole is too small, try next hole
+                allocate_first_fit(unsafe { previous.next.as_mut().unwrap().get_mut() },
+                                   size,
+                                   align)
+            })
 }
 
 fn deallocate(hole: &mut Hole, addr: usize, size: usize) {
