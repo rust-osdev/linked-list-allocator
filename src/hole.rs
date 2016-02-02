@@ -3,11 +3,13 @@ use core::mem::{self, size_of};
 
 use super::align_up;
 
+/// A sorted list of holes. It uses the the holes itself to store its nodes.
 pub struct HoleList {
     first: Hole, // dummy
 }
 
 impl HoleList {
+    /// Creates an empty `HoleList`.
     pub const fn empty() -> HoleList {
         HoleList {
             first: Hole {
@@ -17,6 +19,9 @@ impl HoleList {
         }
     }
 
+    /// Creates a `HoleList` that contains the given hole. This function is unsafe because it
+    /// creates a hole at the given `hole_addr`. This can cause undefined behavior if this address
+    /// is invalid or if memory from the `[hole_addr, hole_addr+size) range is used somewhere else.
     pub unsafe fn new(hole_addr: usize, hole_size: usize) -> HoleList {
         assert!(size_of::<Hole>() == Self::min_size());
 
@@ -35,6 +40,11 @@ impl HoleList {
         }
     }
 
+    /// Searches the list for a big enough hole. A hole is big enough if it can hold an allocation
+    /// of `size` bytes with the given `align`. If such a hole is found in the list, a block of the
+    /// required size is allocated from it. Then the start address of that block is returned.
+    /// This function uses the “first fit” strategy, so it uses the first hole that is big enough. 
+    /// Thus the runtime is in O(n) but it should be reasonably fast for small allocations.
     pub fn allocate_first_fit(&mut self, size: usize, align: usize) -> Option<*mut u8> {
         assert!(size >= Self::min_size());
 
@@ -49,14 +59,22 @@ impl HoleList {
         })
     }
 
+    /// Frees the allocation given by `ptr` and `size`. `ptr` must be a pointer returned by a call
+    /// to the `allocate_first_fit` function with identical size. Undefined behavior may occur for
+    /// invalid arguments.
+    /// This function walks the list and inserts the given block at the correct place. If the freed
+    /// block is adjacent to another free block, the blocks are merged again.
+    /// This operation is in `O(n)` since the list needs to be sorted by address.
     pub unsafe fn deallocate(&mut self, ptr: *mut u8, size: usize) {
         deallocate(&mut self.first, ptr as usize, size)
     }
 
+    /// Returns the minimal allocation size. Smaller allocations or deallocations are not allowed.
     pub fn min_size() -> usize {
         size_of::<usize>() * 2
     }
 
+    /// Returns information about the first hole for test purposes.
     #[cfg(test)]
     pub fn first_hole(&self) -> Option<(usize, usize)> {
         self.first.next.as_ref().map(|hole| (**hole as usize, unsafe { hole.get().size }))
@@ -77,6 +95,7 @@ pub struct Hole {
 }
 
 impl Hole {
+    /// Returns basic information about the hole.
     fn info(&self) -> HoleInfo {
         HoleInfo {
             addr: self as *const _ as usize,
@@ -105,6 +124,11 @@ struct Allocation {
     back_padding: Option<HoleInfo>,
 }
 
+/// Splits the given hole into `(front_padding, hole, back_padding)` if it's big enough to allocate
+/// `required_size` bytes with the `required_align`. Else `None` is returned.
+/// Front padding occurs if the required alignment is higher than the hole's alignment. Back
+/// padding occurs if the required size is smaller than the size of the aligned hole. All padding
+/// must be at least `HoleList::min_size()` big or the hole is unusable.
 fn split_hole(hole: HoleInfo, required_size: usize, required_align: usize) -> Option<Allocation> {
     let aligned_hole = {
         let aligned_hole_addr = align_up(hole.addr, required_align);
@@ -156,6 +180,12 @@ fn split_hole(hole: HoleInfo, required_size: usize, required_align: usize) -> Op
     })
 }
 
+/// Searches the list starting at the next hole of `previous` for a big enough hole. A hole is big
+/// enough if it can hold an allocation of `size` bytes with the given `align`. When a hole is used
+/// for an allocation, there may be some needed padding before and/or after the allocation. This
+/// padding is returned as part of the `Allocation`. The caller must take care of freeing it again.
+/// This function uses the “first fit” strategy, so it breaks as soon as a big enough hole is found
+/// (and returns it).
 fn allocate_first_fit(previous: &mut Hole, size: usize, align: usize) -> Option<Allocation> {
     previous.next
             .as_mut()
