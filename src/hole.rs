@@ -43,7 +43,7 @@ impl HoleList {
     /// Searches the list for a big enough hole. A hole is big enough if it can hold an allocation
     /// of `size` bytes with the given `align`. If such a hole is found in the list, a block of the
     /// required size is allocated from it. Then the start address of that block is returned.
-    /// This function uses the “first fit” strategy, so it uses the first hole that is big enough. 
+    /// This function uses the “first fit” strategy, so it uses the first hole that is big enough.
     /// Thus the runtime is in O(n) but it should be reasonably fast for small allocations.
     pub fn allocate_first_fit(&mut self, size: usize, align: usize) -> Option<*mut u8> {
         assert!(size >= Self::min_size());
@@ -202,7 +202,7 @@ fn allocate_first_fit(previous: &mut Hole, size: usize, align: usize) -> Option<
 }
 
 /// Frees the allocation given by `(addr, size)`. It starts at the given hole and walks the list to
-/// find the correct place (the list is sorted by address). 
+/// find the correct place (the list is sorted by address).
 fn deallocate(hole: &mut Hole, addr: usize, size: usize) {
     assert!(size >= HoleList::min_size());
 
