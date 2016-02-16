@@ -2,5 +2,10 @@
 name = "linked_list_allocator"
 version = "0.1.0"
 authors = ["Philipp Oppermann <dev@phil-opp.com>"]
+license = "Apache-2.0/MIT"
 
-[dependencies]
+description = "Simple allocator usable for no_std systems. It builds a linked list from the freed blocks and thus needs no additional data structures."
+keywords = ["allocator", "no_std", "malloc", "heap", "kernel"]
+
+repository = "https://github.com/phil-opp/linked-list-allocator"
+documentation = "http://phil-opp.github.io/linked-list-allocator/linked_list_allocator/index.html"
