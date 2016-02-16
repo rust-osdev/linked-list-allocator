@@ -9,3 +9,7 @@ keywords = ["allocator", "no_std", "malloc", "heap", "kernel"]
 
 repository = "https://github.com/phil-opp/linked-list-allocator"
 documentation = "http://phil-opp.github.io/linked-list-allocator/linked_list_allocator/index.html"
+
+exclude = [
+    "scripts/*"
+]
