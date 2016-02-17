@@ -203,7 +203,8 @@ fn allocate_first_fit(previous: &mut Hole, size: usize, align: usize) -> Option<
 
 /// Frees the allocation given by `(addr, size)`. It starts at the given hole and walks the list to
 /// find the correct place (the list is sorted by address).
-fn deallocate(hole: &mut Hole, addr: usize, size: usize) {
+fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
+    loop {
     assert!(size >= HoleList::min_size());
 
     let hole_addr = if hole.size == 0 {
@@ -216,8 +217,8 @@ fn deallocate(hole: &mut Hole, addr: usize, size: usize) {
         hole as *mut _ as usize
     };
 
-    // Each freed block must be handled by the previous hole in memory. Thus the freed address must
-    // be always behind the current hole.
+    // Each freed block must be handled by the previous hole in memory. Thus the freed
+    // address must be always behind the current hole.
     assert!(hole_addr + hole.size <= addr);
 
     // get information about the next block
@@ -245,14 +246,16 @@ fn deallocate(hole: &mut Hole, addr: usize, size: usize) {
             // after:   ___XXX__FFFFYYYYY____    where F is the freed block
 
             hole.next = hole.next_unwrap().next.take(); // remove the Y block
-            deallocate(hole, addr, size + next.size); // free the merged F/Y block
+            size += next.size;  // free the merged F/Y block in next iteration
+            continue;
         }
         Some(next) if next.addr <= addr => {
             // block is behind the next hole, so we delegate it to the next hole
             // before:  ___XXX__YYYYY________    where X is this hole and Y the next hole
             // after:   ___XXX__YYYYY__FFFF__    where F is the freed block
 
-            deallocate(hole.next_unwrap(), addr, size);
+            hole = move_helper(hole).next_unwrap(); // start next iteration at next hole
+            continue;
         }
         _ => {
             // block is between this and the next hole
@@ -274,4 +277,17 @@ fn deallocate(hole: &mut Hole, addr: usize, size: usize) {
             hole.next = Some(unsafe { Unique::new(ptr) });
         }
     }
+    break;
+}
+}
+
+/// Identity function to ease moving of references.
+///
+/// By default, references are reborrowed instead of moved (equivalent to `&mut *reference`). This
+/// function forces a move.
+///
+/// for more information, see:
+/// https://bluss.github.io/rust/fun/2015/10/11/stuff-the-identity-function-does/#id-forces-references-to-move
+fn move_helper<T>(x: T) -> T {
+    x
 }
