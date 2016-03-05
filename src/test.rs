@@ -16,6 +16,20 @@ fn new_heap() -> Heap {
 }
 
 #[test]
+fn empty() {
+    let mut heap = Heap::empty();
+    assert!(heap.allocate_first_fit(1, 1).is_none());
+}
+
+#[test]
+fn oom() {
+    let mut heap = new_heap();
+    let size = heap.top() - heap.bottom() + 1;
+    let addr = heap.allocate_first_fit(size, align_of::<usize>());
+    assert!(addr.is_none());
+}
+
+#[test]
 fn allocate_double_usize() {
     let mut heap = new_heap();
     let size = size_of::<usize>() * 2;
