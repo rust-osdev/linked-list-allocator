@@ -186,23 +186,27 @@ fn split_hole(hole: HoleInfo, required_size: usize, required_align: usize) -> Op
 /// padding is returned as part of the `Allocation`. The caller must take care of freeing it again.
 /// This function uses the “first fit” strategy, so it breaks as soon as a big enough hole is found
 /// (and returns it).
-fn allocate_first_fit(previous: &mut Hole, size: usize, align: usize) -> Option<Allocation> {
-    previous.next
-            .as_mut()
-            .and_then(|current| split_hole(unsafe { current.get() }.info(), size, align))
-            .map(|allocation| {
+fn allocate_first_fit(mut previous: &mut Hole, size: usize, align: usize) -> Option<Allocation> {
+    loop {
+        let allocation: Option<Allocation> = previous.next.as_mut().and_then(|current| {
+            split_hole(unsafe { current.get() }.info(), size, align)
+        });
+        match allocation {
+            Some(allocation) => {
                 // hole is big enough, so remove it from the list by updating the previous pointer
                 previous.next = previous.next_unwrap().next.take();
-                allocation
-            })
-            .or_else(|| {
-                // hole is too small, try next hole (if it exists)
-                if previous.next.is_some() {
-                    allocate_first_fit(previous.next_unwrap(), size, align)
-                } else {
-                    None
-                }
-            })
+                return Some(allocation);
+            }
+            None if previous.next.is_some() => {
+                // try next hole
+                previous = move_helper(previous).next_unwrap();
+            }
+            None => {
+                // this was the last hole, so no hole is big enough -> allocation not possible
+                return None;
+            }
+        }
+    }
 }
 
 /// Frees the allocation given by `(addr, size)`. It starts at the given hole and walks the list to
