@@ -196,8 +196,12 @@ fn allocate_first_fit(previous: &mut Hole, size: usize, align: usize) -> Option<
                 allocation
             })
             .or_else(|| {
-                // hole is too small, try next hole
-                allocate_first_fit(previous.next_unwrap(), size, align)
+                // hole is too small, try next hole (if it exists)
+                if previous.next.is_some() {
+                    allocate_first_fit(previous.next_unwrap(), size, align)
+                } else {
+                    None
+                }
             })
 }
 
