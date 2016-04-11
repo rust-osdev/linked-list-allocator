@@ -7,11 +7,9 @@ fn new_heap() -> Heap {
     const HEAP_SIZE: usize = 1000;
     let heap_space = Box::into_raw(Box::new([0u8; HEAP_SIZE]));
 
-    let heap_bottom = heap_space as usize;
-    let heap_top = heap_bottom + HEAP_SIZE;
-    let heap = unsafe { Heap::new(heap_bottom, heap_top) };
-    assert!(heap.bottom == heap_bottom);
-    assert!(heap.top == heap_top);
+    let heap = unsafe { Heap::new(heap_space as usize, HEAP_SIZE) };
+    assert!(heap.bottom == heap_space as usize);
+    assert!(heap.size == HEAP_SIZE);
     heap
 }
 
@@ -24,7 +22,7 @@ fn empty() {
 #[test]
 fn oom() {
     let mut heap = new_heap();
-    let size = heap.top() - heap.bottom() + 1;
+    let size = heap.size() + 1;
     let addr = heap.allocate_first_fit(size, align_of::<usize>());
     assert!(addr.is_none());
 }
@@ -39,11 +37,10 @@ fn allocate_double_usize() {
     assert!(addr == heap.bottom);
     let (hole_addr, hole_size) = heap.holes.first_hole().expect("ERROR: no hole left");
     assert!(hole_addr == heap.bottom + size);
-    assert!(hole_size == heap.top - heap.bottom - size);
+    assert!(hole_size == heap.size - size);
 
     unsafe {
-        assert_eq!((*((addr + size) as *const Hole)).size,
-                   heap.top - heap.bottom - size);
+        assert_eq!((*((addr + size) as *const Hole)).size, heap.size - size);
     }
 }
 
@@ -56,7 +53,7 @@ fn allocate_and_free_double_usize() {
         *(x as *mut (usize, usize)) = (0xdeafdeadbeafbabe, 0xdeafdeadbeafbabe);
 
         heap.deallocate(x, size_of::<usize>() * 2, align_of::<usize>());
-        assert_eq!((*(heap.bottom as *const Hole)).size, heap.top - heap.bottom);
+        assert_eq!((*(heap.bottom as *const Hole)).size, heap.size);
         assert!((*(heap.bottom as *const Hole)).next.is_none());
     }
 }
@@ -76,7 +73,7 @@ fn deallocate_right_before() {
         heap.deallocate(x, size, 1);
         assert_eq!((*(x as *const Hole)).size, size * 2);
         heap.deallocate(z, size, 1);
-        assert_eq!((*(x as *const Hole)).size, heap.top - heap.bottom);
+        assert_eq!((*(x as *const Hole)).size, heap.size);
     }
 }
 
@@ -95,7 +92,7 @@ fn deallocate_right_behind() {
         heap.deallocate(y, size, 1);
         assert_eq!((*(x as *const Hole)).size, size * 2);
         heap.deallocate(z, size, 1);
-        assert_eq!((*(x as *const Hole)).size, heap.top - heap.bottom);
+        assert_eq!((*(x as *const Hole)).size, heap.size);
     }
 }
 
@@ -118,7 +115,7 @@ fn deallocate_middle() {
         heap.deallocate(y, size, 1);
         assert_eq!((*(x as *const Hole)).size, size * 3);
         heap.deallocate(a, size, 1);
-        assert_eq!((*(x as *const Hole)).size, heap.top - heap.bottom);
+        assert_eq!((*(x as *const Hole)).size, heap.size);
     }
 }
 

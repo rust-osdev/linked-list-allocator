@@ -15,7 +15,7 @@ mod test;
 /// A fixed size heap backed by a linked list of free memory blocks.
 pub struct Heap {
     bottom: usize,
-    top: usize,
+    size: usize,
     holes: HoleList,
 }
 
@@ -23,21 +23,21 @@ impl Heap {
     /// Creates an empty heap. All allocate calls will return `None`.
     pub const fn empty() -> Heap {
         Heap {
-            top: 0,
             bottom: 0,
+            size: 0,
             holes: HoleList::empty(),
         }
     }
 
-    /// Creates a new heap with the given `bottom` and `top`. Both addresses must be valid and the
-    /// memory in the `[heap_bottom, heap_top)` range must not be used for anything else. This
-    /// function is unsafe because it can cause undefined behavior if the given addresses are
-    /// invalid.
-    pub unsafe fn new(heap_bottom: usize, heap_top: usize) -> Heap {
+    /// Creates a new heap with the given `bottom` and `size`. The bottom address must be valid
+    /// and the memory in the `[heap_bottom, heap_bottom + heap_size)` range must not be used for
+    /// anything else. This function is unsafe because it can cause undefined behavior if the
+    /// given address is invalid.
+    pub unsafe fn new(heap_bottom: usize, heap_size: usize) -> Heap {
         Heap {
             bottom: heap_bottom,
-            top: heap_top,
-            holes: HoleList::new(heap_bottom, heap_top - heap_bottom),
+            size: heap_size,
+            holes: HoleList::new(heap_bottom, heap_size),
         }
     }
 
@@ -73,9 +73,9 @@ impl Heap {
         self.bottom
     }
 
-    /// Returns the top address of the heap.
-    pub fn top(&self) -> usize {
-        self.top
+    /// Returns the size of the heap.
+    pub fn size(&self) -> usize {
+        self.size
     }
 }
 
