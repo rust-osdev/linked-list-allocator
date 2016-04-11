@@ -79,12 +79,20 @@ impl Heap {
     }
 }
 
-/// Align downwards. Returns the greatest x with alignment `align` so that x<=value.
-fn align_down(value: usize, align: usize) -> usize {
-    value / align * align
+/// Align downwards. Returns the greatest x with alignment `align`
+/// so that x <= addr. The alignment must be a power of 2.
+pub fn align_down(addr: usize, align: usize) -> usize {
+    if align.is_power_of_two() {
+        addr & !(align - 1)
+    } else if align == 0 {
+        addr
+    } else {
+        panic!("`align` must be a power of 2");
+    }
 }
 
-/// Align upwards. Returns the smallest x with alignment `align` so that value<=x.
-fn align_up(value: usize, align: usize) -> usize {
-    align_down(value + align - 1, align)
+/// Align upwards. Returns the smallest x with alignment `align`
+/// so that x >= addr. The alignment must be a power of 2.
+pub fn align_up(addr: usize, align: usize) -> usize {
+    align_down(addr + align - 1, align)
 }
