@@ -171,7 +171,6 @@ fn allocate_usize() {
     assert!(heap.allocate_first_fit(size_of::<usize>(), 1).is_some());
 }
 
-
 #[test]
 fn allocate_usize_in_bigger_block() {
     let mut heap = new_heap();
@@ -191,4 +190,15 @@ fn allocate_usize_in_bigger_block() {
         heap.deallocate(y, size_of::<usize>() * 2, 1);
         heap.deallocate(z, size_of::<usize>(), 1);
     }
+}
+
+#[test]
+// see https://github.com/phil-opp/blog_os/issues/160
+fn align_from_small_to_big() {
+    let mut heap = new_heap();
+
+    // allocate 28 bytes so that the heap end is only 4 byte aligned
+    assert!(heap.allocate_first_fit(28, 4).is_some());
+    // try to allocate a 8 byte aligned block
+    assert!(heap.allocate_first_fit(8, 8).is_some());
 }

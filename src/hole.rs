@@ -130,30 +130,27 @@ struct Allocation {
 /// padding occurs if the required size is smaller than the size of the aligned hole. All padding
 /// must be at least `HoleList::min_size()` big or the hole is unusable.
 fn split_hole(hole: HoleInfo, required_size: usize, required_align: usize) -> Option<Allocation> {
+    let (aligned_addr, front_padding) = if hole.addr == align_up(hole.addr, required_align) {
+        // hole has already the required alignment
+        (hole.addr, None)
+    } else {
+        // the required alignment causes some padding before the allocation
+        let aligned_addr = align_up(hole.addr + HoleList::min_size(), required_align);
+        (aligned_addr, Some(HoleInfo {
+            addr: hole.addr,
+            size: aligned_addr - hole.addr,
+        }))
+    };
+
     let aligned_hole = {
-        let aligned_hole_addr = align_up(hole.addr, required_align);
-        if aligned_hole_addr + required_size > hole.addr + hole.size {
+        if aligned_addr + required_size > hole.addr + hole.size {
             // hole is too small
             return None;
         }
         HoleInfo {
-            addr: aligned_hole_addr,
-            size: hole.size - (aligned_hole_addr - hole.addr),
+            addr: aligned_addr,
+            size: hole.size - (aligned_addr - hole.addr),
         }
-    };
-
-    let front_padding = if aligned_hole.addr == hole.addr {
-        // hole has already the required alignment
-        None
-    } else if aligned_hole.addr < hole.addr + HoleList::min_size() {
-        // we can't use this hole because the required padding would create a new, too small hole
-        return None;
-    } else {
-        // the required alignment causes some padding before the allocation
-        Some(HoleInfo {
-            addr: hole.addr,
-            size: aligned_hole.addr - hole.addr,
-        })
     };
 
     let back_padding = if aligned_hole.size == required_size {
