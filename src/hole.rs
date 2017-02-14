@@ -225,7 +225,8 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
 
         // Each freed block must be handled by the previous hole in memory. Thus the freed
         // address must be always behind the current hole.
-        assert!(hole_addr + hole.size <= addr);
+        assert!(hole_addr + hole.size <= addr,
+                "invalid deallocation (probably a double free)");
 
         // get information about the next block
         let next_hole_info = hole.next.as_ref().map(|next| unsafe { next.get().info() });
