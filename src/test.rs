@@ -1,7 +1,6 @@
 use std::prelude::v1::*;
 use std::mem::{size_of, align_of};
 use super::*;
-use super::hole::*;
 
 fn new_heap() -> Heap {
     const HEAP_SIZE: usize = 1000;

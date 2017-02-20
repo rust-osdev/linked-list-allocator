@@ -6,7 +6,8 @@
 #[macro_use]
 extern crate std;
 
-use hole::HoleList;
+use hole::{Hole, HoleList};
+use core::mem;
 
 mod hole;
 #[cfg(test)]
@@ -62,6 +63,7 @@ impl Heap {
         if size < HoleList::min_size() {
             size = HoleList::min_size();
         }
+        let size = align_up(size, mem::align_of::<Hole>());
 
         self.holes.allocate_first_fit(size, align)
     }
@@ -77,6 +79,8 @@ impl Heap {
         if size < HoleList::min_size() {
             size = HoleList::min_size();
         }
+        let size = align_up(size, mem::align_of::<Hole>());
+
         self.holes.deallocate(ptr, size);
     }
 

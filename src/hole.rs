@@ -83,7 +83,7 @@ impl HoleList {
 
 /// A block containing free memory. It points to the next hole and thus forms a linked list.
 #[cfg(not(test))]
-struct Hole {
+pub struct Hole {
     size: usize,
     next: Option<Unique<Hole>>,
 }
