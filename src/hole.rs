@@ -26,11 +26,11 @@ impl HoleList {
         assert!(size_of::<Hole>() == Self::min_size());
 
         let ptr = hole_addr as *mut Hole;
-        mem::forget(mem::replace(&mut *ptr,
-                                 Hole {
-                                     size: hole_size,
-                                     next: None,
-                                 }));
+        mem::replace(&mut *ptr,
+                     Hole {
+                         size: hole_size,
+                         next: None,
+                     });
 
         HoleList {
             first: Hole {
@@ -283,7 +283,7 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
                 };
                 // write the new hole to the freed memory
                 let ptr = addr as *mut Hole;
-                mem::forget(mem::replace(unsafe { &mut *ptr }, new_hole));
+                mem::replace(unsafe { &mut *ptr }, new_hole);
                 // add the F block as the next block of the X block
                 hole.next = Some(unsafe { Unique::new(ptr) });
             }
