@@ -77,7 +77,7 @@ impl HoleList {
     /// Returns information about the first hole for test purposes.
     #[cfg(test)]
     pub fn first_hole(&self) -> Option<(usize, usize)> {
-        self.first.next.as_ref().map(|hole| (**hole as usize, unsafe { hole.get().size }))
+        self.first.next.as_ref().map(|hole| (hole.as_ptr() as usize, unsafe { hole.as_ref().size }))
     }
 }
 
