@@ -105,7 +105,7 @@ impl Hole {
 
     /// Returns a reference to the next hole. Panics if this is the last hole.
     fn next_unwrap(&mut self) -> &mut Hole {
-        unsafe { self.next.as_mut().unwrap().get_mut() }
+        unsafe { self.next.as_mut().unwrap().as_mut() }
     }
 }
 
@@ -188,7 +188,7 @@ fn allocate_first_fit(mut previous: &mut Hole, size: usize, align: usize) -> Opt
     loop {
         let allocation: Option<Allocation> = previous.next
             .as_mut()
-            .and_then(|current| split_hole(unsafe { current.get() }.info(), size, align));
+            .and_then(|current| split_hole(unsafe { current.as_ref() }.info(), size, align));
         match allocation {
             Some(allocation) => {
                 // hole is big enough, so remove it from the list by updating the previous pointer
@@ -229,7 +229,7 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
                 "invalid deallocation (probably a double free)");
 
         // get information about the next block
-        let next_hole_info = hole.next.as_ref().map(|next| unsafe { next.get().info() });
+        let next_hole_info = hole.next.as_ref().map(|next| unsafe { next.as_ref().info() });
 
         match next_hole_info {
             Some(next) if hole_addr + hole.size == addr && addr + size == next.addr => {
