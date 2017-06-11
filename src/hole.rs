@@ -26,11 +26,11 @@ impl HoleList {
         assert!(size_of::<Hole>() == Self::min_size());
 
         let ptr = hole_addr as *mut Hole;
-        mem::forget(mem::replace(&mut *ptr,
-                                 Hole {
-                                     size: hole_size,
-                                     next: None,
-                                 }));
+        mem::replace(&mut *ptr,
+                     Hole {
+                         size: hole_size,
+                         next: None,
+                     });
 
         HoleList {
             first: Hole {
@@ -240,10 +240,14 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
                 hole.size += size + next.size; // merge the F and Y blocks to this X block
                 hole.next = hole.next_unwrap().next.take(); // remove the Y block
             }
-            Some(_) if hole_addr + hole.size == addr => {
+            _ if hole_addr + hole.size == addr => {
                 // block is right behind this hole but there is used memory after it
                 // before:  ___XXX______YYYYY____    where X is this hole and Y the next hole
                 // after:   ___XXXFFFF__YYYYY____    where F is the freed block
+
+                // or: block is right behind this hole and this is the last hole
+                // before:  ___XXX_______________    where X is this hole and Y the next hole
+                // after:   ___XXXFFFF___________    where F is the freed block
 
                 hole.size += size; // merge the F block to this X block
             }
@@ -279,7 +283,7 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
                 };
                 // write the new hole to the freed memory
                 let ptr = addr as *mut Hole;
-                mem::forget(mem::replace(unsafe { &mut *ptr }, new_hole));
+                mem::replace(unsafe { &mut *ptr }, new_hole);
                 // add the F block as the next block of the X block
                 hole.next = Some(unsafe { Unique::new(ptr) });
             }

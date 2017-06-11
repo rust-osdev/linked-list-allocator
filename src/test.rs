@@ -12,6 +12,17 @@ fn new_heap() -> Heap {
     heap
 }
 
+fn new_max_heap() -> Heap {
+    const HEAP_SIZE: usize = 1024;
+    const HEAP_SIZE_MAX: usize = 2048;
+    let heap_space = Box::into_raw(Box::new([0u8; HEAP_SIZE_MAX]));
+
+    let heap = unsafe { Heap::new(heap_space as usize, HEAP_SIZE) };
+    assert!(heap.bottom == heap_space as usize);
+    assert!(heap.size == HEAP_SIZE);
+    heap
+}
+
 #[test]
 fn empty() {
     let mut heap = Heap::empty();
@@ -200,4 +211,52 @@ fn align_from_small_to_big() {
     assert!(heap.allocate_first_fit(28, 4).is_some());
     // try to allocate a 8 byte aligned block
     assert!(heap.allocate_first_fit(8, 8).is_some());
+}
+
+#[test]
+fn extend_empty_heap() {
+    let mut heap = new_max_heap();
+
+    unsafe {
+        heap.extend(1024);
+    }
+
+    // Try to allocate full heap after extend
+    assert!(heap.allocate_first_fit(2048, 1).is_some());
+}
+
+#[test]
+fn extend_full_heap() {
+    let mut heap = new_max_heap();
+
+    // Allocate full heap, extend and allocate again to the max
+    assert!(heap.allocate_first_fit(1024, 1).is_some());
+    unsafe {
+        heap.extend(1024);
+    }
+    assert!(heap.allocate_first_fit(1024, 1).is_some());
+}
+
+#[test]
+fn extend_fragmented_heap() {
+    let mut heap = new_max_heap();
+
+    let alloc1 = heap.allocate_first_fit(512, 1);
+    let alloc2 = heap.allocate_first_fit(512, 1);
+
+    assert!(alloc1.is_some());
+    assert!(alloc2.is_some());
+
+    unsafe {
+        // Create a hole at the beginning of the heap
+        heap.deallocate(alloc1.unwrap(), 512, 1);
+    }
+
+    unsafe {
+        heap.extend(1024);
+    }
+
+    // We got additional 1024 bytes hole at the end of the heap
+    // Try to allocate there
+    assert!(heap.allocate_first_fit(1024, 1).is_some());
 }
