@@ -27,11 +27,13 @@ impl HoleList {
         assert!(size_of::<Hole>() == Self::min_size());
 
         let ptr = hole_addr as *mut Hole;
-        mem::replace(&mut *ptr,
-                     Hole {
-                         size: hole_size,
-                         next: None,
-                     });
+        mem::replace(
+            &mut *ptr,
+            Hole {
+                size: hole_size,
+                next: None,
+            },
+        );
 
         HoleList {
             first: Hole {
@@ -79,7 +81,9 @@ impl HoleList {
     /// Returns information about the first hole for test purposes.
     #[cfg(test)]
     pub fn first_hole(&self) -> Option<(usize, usize)> {
-        self.first.next.as_ref().map(|hole| (hole.as_ptr() as usize, unsafe { hole.as_ref().size }))
+        self.first.next.as_ref().map(|hole| {
+            (hole.as_ptr() as usize, unsafe { hole.as_ref().size })
+        })
     }
 }
 
@@ -141,11 +145,13 @@ fn split_hole(hole: HoleInfo, required_layout: Layout) -> Option<Allocation> {
     } else {
         // the required alignment causes some padding before the allocation
         let aligned_addr = align_up(hole.addr + HoleList::min_size(), required_align);
-        (aligned_addr,
-         Some(HoleInfo {
-             addr: hole.addr,
-             size: aligned_addr - hole.addr,
-         }))
+        (
+            aligned_addr,
+            Some(HoleInfo {
+                addr: hole.addr,
+                size: aligned_addr - hole.addr,
+            }),
+        )
     };
 
     let aligned_hole = {
@@ -192,9 +198,9 @@ fn split_hole(hole: HoleInfo, required_layout: Layout) -> Option<Allocation> {
 /// found (and returns it).
 fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Result<Allocation, AllocErr> {
     loop {
-        let allocation: Option<Allocation> = previous.next
-            .as_mut()
-            .and_then(|current| split_hole(unsafe { current.as_ref() }.info(), layout.clone()));
+        let allocation: Option<Allocation> = previous.next.as_mut().and_then(|current| {
+            split_hole(unsafe { current.as_ref() }.info(), layout.clone())
+        });
         match allocation {
             Some(allocation) => {
                 // hole is big enough, so remove it from the list by updating the previous pointer
@@ -207,9 +213,7 @@ fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Result<Allocat
             }
             None => {
                 // this was the last hole, so no hole is big enough -> allocation not possible
-                return Err(AllocErr::Exhausted {
-                    request: layout,
-                });
+                return Err(AllocErr::Exhausted { request: layout });
             }
         }
     }
@@ -233,11 +237,15 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
 
         // Each freed block must be handled by the previous hole in memory. Thus the freed
         // address must be always behind the current hole.
-        assert!(hole_addr + hole.size <= addr,
-                "invalid deallocation (probably a double free)");
+        assert!(
+            hole_addr + hole.size <= addr,
+            "invalid deallocation (probably a double free)"
+        );
 
         // get information about the next block
-        let next_hole_info = hole.next.as_ref().map(|next| unsafe { next.as_ref().info() });
+        let next_hole_info = hole.next
+            .as_ref()
+            .map(|next| unsafe { next.as_ref().info() });
 
         match next_hole_info {
             Some(next) if hole_addr + hole.size == addr && addr + size == next.addr => {

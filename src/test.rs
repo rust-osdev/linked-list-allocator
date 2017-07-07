@@ -61,7 +61,7 @@ fn allocate_double_usize() {
 fn allocate_and_free_double_usize() {
     let mut heap = new_heap();
 
-    let layout = Layout::from_size_align(size_of::<usize>() * 2, align_of::<usize>()).unwrap();    
+    let layout = Layout::from_size_align(size_of::<usize>() * 2, align_of::<usize>()).unwrap();
     let x = heap.allocate_first_fit(layout.clone()).unwrap();
     unsafe {
         *(x as *mut (usize, usize)) = (0xdeafdeadbeafbabe, 0xdeafdeadbeafbabe);
