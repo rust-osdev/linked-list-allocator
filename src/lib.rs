@@ -1,6 +1,9 @@
 #![feature(unique)]
 #![feature(const_fn)]
+#![feature(alloc, allocator_api)]
 #![no_std]
+
+extern crate alloc;
 
 #[cfg(test)]
 #[macro_use]
@@ -8,6 +11,7 @@ extern crate std;
 
 use hole::{Hole, HoleList};
 use core::mem;
+use alloc::allocator::{Alloc, Layout, AllocErr};
 
 mod hole;
 #[cfg(test)]
@@ -59,13 +63,15 @@ impl Heap {
     /// This function scans the list of free memory blocks and uses the first block that is big
     /// enough. The runtime is in O(n) where n is the number of free blocks, but it should be
     /// reasonably fast for small allocations.
-    pub fn allocate_first_fit(&mut self, mut size: usize, align: usize) -> Option<*mut u8> {
+    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+        let mut size = layout.size();
         if size < HoleList::min_size() {
             size = HoleList::min_size();
         }
         let size = align_up(size, mem::align_of::<Hole>());
+        let layout = Layout::from_size_align(size, layout.align()).unwrap();
 
-        self.holes.allocate_first_fit(size, align)
+        self.holes.allocate_first_fit(layout)
     }
 
     /// Frees the given allocation. `ptr` must be a pointer returned
@@ -75,13 +81,15 @@ impl Heap {
     /// This function walks the list of free memory blocks and inserts the freed block at the
     /// correct place. If the freed block is adjacent to another free block, the blocks are merged
     /// again. This operation is in `O(n)` since the list needs to be sorted by address.
-    pub unsafe fn deallocate(&mut self, ptr: *mut u8, mut size: usize, _align: usize) {
+    pub unsafe fn deallocate(&mut self, ptr: *mut u8, layout: Layout) {
+        let mut size = layout.size();
         if size < HoleList::min_size() {
             size = HoleList::min_size();
         }
         let size = align_up(size, mem::align_of::<Hole>());
+        let layout = Layout::from_size_align(size, layout.align()).unwrap();
 
-        self.holes.deallocate(ptr, size);
+        self.holes.deallocate(ptr, layout);
     }
 
     /// Returns the bottom address of the heap.
@@ -106,8 +114,19 @@ impl Heap {
     /// The new extended area must be valid
     pub unsafe fn extend(&mut self, by: usize) {
         let top = self.top();
-        self.holes.deallocate(top as *mut u8, by);
+        let layout = Layout::from_size_align(by, 1).unwrap();
+        self.holes.deallocate(top as *mut u8, layout);
         self.size += by;
+    }
+}
+
+unsafe impl Alloc for Heap {
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+        self.allocate_first_fit(layout)
+    }
+
+    unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+        self.deallocate(ptr, layout)
     }
 }
 
