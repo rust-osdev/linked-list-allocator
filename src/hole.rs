@@ -1,5 +1,6 @@
 use core::ptr::Unique;
 use core::mem::{self, size_of};
+use alloc::allocator::{Layout, AllocErr};
 
 use super::align_up;
 
@@ -26,11 +27,13 @@ impl HoleList {
         assert!(size_of::<Hole>() == Self::min_size());
 
         let ptr = hole_addr as *mut Hole;
-        mem::replace(&mut *ptr,
-                     Hole {
-                         size: hole_size,
-                         next: None,
-                     });
+        mem::replace(
+            &mut *ptr,
+            Hole {
+                size: hole_size,
+                next: None,
+            },
+        );
 
         HoleList {
             first: Hole {
@@ -41,14 +44,15 @@ impl HoleList {
     }
 
     /// Searches the list for a big enough hole. A hole is big enough if it can hold an allocation
-    /// of `size` bytes with the given `align`. If such a hole is found in the list, a block of the
-    /// required size is allocated from it. Then the start address of that block is returned.
+    /// of `layout.size()` bytes with the given `layout.align()`. If such a hole is found in the
+    /// list, a block of the required size is allocated from it. Then the start address of that
+    /// block is returned.
     /// This function uses the “first fit” strategy, so it uses the first hole that is big
     /// enough. Thus the runtime is in O(n) but it should be reasonably fast for small allocations.
-    pub fn allocate_first_fit(&mut self, size: usize, align: usize) -> Option<*mut u8> {
-        assert!(size >= Self::min_size());
+    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+        assert!(layout.size() >= Self::min_size());
 
-        allocate_first_fit(&mut self.first, size, align).map(|allocation| {
+        allocate_first_fit(&mut self.first, layout).map(|allocation| {
             if let Some(padding) = allocation.front_padding {
                 deallocate(&mut self.first, padding.addr, padding.size);
             }
@@ -59,14 +63,14 @@ impl HoleList {
         })
     }
 
-    /// Frees the allocation given by `ptr` and `size`. `ptr` must be a pointer returned by a call
-    /// to the `allocate_first_fit` function with identical size. Undefined behavior may occur for
+    /// Frees the allocation given by `ptr` and `layout`. `ptr` must be a pointer returned by a call
+    /// to the `allocate_first_fit` function with identical layout. Undefined behavior may occur for
     /// invalid arguments.
     /// This function walks the list and inserts the given block at the correct place. If the freed
     /// block is adjacent to another free block, the blocks are merged again.
     /// This operation is in `O(n)` since the list needs to be sorted by address.
-    pub unsafe fn deallocate(&mut self, ptr: *mut u8, size: usize) {
-        deallocate(&mut self.first, ptr as usize, size)
+    pub unsafe fn deallocate(&mut self, ptr: *mut u8, layout: Layout) {
+        deallocate(&mut self.first, ptr as usize, layout.size())
     }
 
     /// Returns the minimal allocation size. Smaller allocations or deallocations are not allowed.
@@ -77,7 +81,9 @@ impl HoleList {
     /// Returns information about the first hole for test purposes.
     #[cfg(test)]
     pub fn first_hole(&self) -> Option<(usize, usize)> {
-        self.first.next.as_ref().map(|hole| (hole.as_ptr() as usize, unsafe { hole.as_ref().size }))
+        self.first.next.as_ref().map(|hole| {
+            (hole.as_ptr() as usize, unsafe { hole.as_ref().size })
+        })
     }
 }
 
@@ -125,22 +131,27 @@ struct Allocation {
 }
 
 /// Splits the given hole into `(front_padding, hole, back_padding)` if it's big enough to allocate
-/// `required_size` bytes with the `required_align`. Else `None` is returned.
+/// `required_layout.size()` bytes with the `required_layout.align()`. Else `None` is returned.
 /// Front padding occurs if the required alignment is higher than the hole's alignment. Back
 /// padding occurs if the required size is smaller than the size of the aligned hole. All padding
 /// must be at least `HoleList::min_size()` big or the hole is unusable.
-fn split_hole(hole: HoleInfo, required_size: usize, required_align: usize) -> Option<Allocation> {
+fn split_hole(hole: HoleInfo, required_layout: Layout) -> Option<Allocation> {
+    let required_size = required_layout.size();
+    let required_align = required_layout.align();
+
     let (aligned_addr, front_padding) = if hole.addr == align_up(hole.addr, required_align) {
         // hole has already the required alignment
         (hole.addr, None)
     } else {
         // the required alignment causes some padding before the allocation
         let aligned_addr = align_up(hole.addr + HoleList::min_size(), required_align);
-        (aligned_addr,
-         Some(HoleInfo {
-             addr: hole.addr,
-             size: aligned_addr - hole.addr,
-         }))
+        (
+            aligned_addr,
+            Some(HoleInfo {
+                addr: hole.addr,
+                size: aligned_addr - hole.addr,
+            }),
+        )
     };
 
     let aligned_hole = {
@@ -179,21 +190,22 @@ fn split_hole(hole: HoleInfo, required_size: usize, required_align: usize) -> Op
 }
 
 /// Searches the list starting at the next hole of `previous` for a big enough hole. A hole is big
-/// enough if it can hold an allocation of `size` bytes with the given `align`. When a hole is used
-/// for an allocation, there may be some needed padding before and/or after the allocation. This
-/// padding is returned as part of the `Allocation`. The caller must take care of freeing it again.
+/// enough if it can hold an allocation of `layout.size()` bytes with the given `layou.align()`.
+/// When a hole is used for an allocation, there may be some needed padding before and/or after
+/// the allocation. This padding is returned as part of the `Allocation`. The caller must take
+/// care of freeing it again.
 /// This function uses the “first fit” strategy, so it breaks as soon as a big enough hole is
 /// found (and returns it).
-fn allocate_first_fit(mut previous: &mut Hole, size: usize, align: usize) -> Option<Allocation> {
+fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Result<Allocation, AllocErr> {
     loop {
-        let allocation: Option<Allocation> = previous.next
-            .as_mut()
-            .and_then(|current| split_hole(unsafe { current.as_ref() }.info(), size, align));
+        let allocation: Option<Allocation> = previous.next.as_mut().and_then(|current| {
+            split_hole(unsafe { current.as_ref() }.info(), layout.clone())
+        });
         match allocation {
             Some(allocation) => {
                 // hole is big enough, so remove it from the list by updating the previous pointer
                 previous.next = previous.next_unwrap().next.take();
-                return Some(allocation);
+                return Ok(allocation);
             }
             None if previous.next.is_some() => {
                 // try next hole
@@ -201,7 +213,7 @@ fn allocate_first_fit(mut previous: &mut Hole, size: usize, align: usize) -> Opt
             }
             None => {
                 // this was the last hole, so no hole is big enough -> allocation not possible
-                return None;
+                return Err(AllocErr::Exhausted { request: layout });
             }
         }
     }
@@ -225,11 +237,15 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
 
         // Each freed block must be handled by the previous hole in memory. Thus the freed
         // address must be always behind the current hole.
-        assert!(hole_addr + hole.size <= addr,
-                "invalid deallocation (probably a double free)");
+        assert!(
+            hole_addr + hole.size <= addr,
+            "invalid deallocation (probably a double free)"
+        );
 
         // get information about the next block
-        let next_hole_info = hole.next.as_ref().map(|next| unsafe { next.as_ref().info() });
+        let next_hole_info = hole.next
+            .as_ref()
+            .map(|next| unsafe { next.as_ref().info() });
 
         match next_hole_info {
             Some(next) if hole_addr + hole.size == addr && addr + size == next.addr => {
