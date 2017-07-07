@@ -13,6 +13,7 @@ extern crate spin;
 
 use hole::{Hole, HoleList};
 use core::mem;
+use core::ops::Deref;
 use alloc::allocator::{Alloc, Layout, AllocErr};
 use spin::Mutex;
 
@@ -134,6 +135,33 @@ unsafe impl Alloc for Heap {
 }
 
 pub struct LockedHeap(Mutex<Heap>);
+
+impl LockedHeap {
+    /// Creates an empty heap. All allocate calls will return `None`.
+    pub const fn empty() -> LockedHeap {
+        LockedHeap(Mutex::new(Heap::empty()))
+    }
+
+    /// Creates a new heap with the given `bottom` and `size`. The bottom address must be valid
+    /// and the memory in the `[heap_bottom, heap_bottom + heap_size)` range must not be used for
+    /// anything else. This function is unsafe because it can cause undefined behavior if the
+    /// given address is invalid.
+    pub unsafe fn new(heap_bottom: usize, heap_size: usize) -> LockedHeap {
+        LockedHeap(Mutex::new(Heap {
+            bottom: heap_bottom,
+            size: heap_size,
+            holes: HoleList::new(heap_bottom, heap_size),
+        }))
+    }
+}
+
+impl Deref for LockedHeap {
+    type Target = Mutex<Heap>;
+
+    fn deref(&self) -> &Mutex<Heap> {
+        &self.0
+    }
+}
 
 unsafe impl<'a> Alloc for &'a LockedHeap {
     unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
