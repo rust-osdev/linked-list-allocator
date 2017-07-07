@@ -133,9 +133,9 @@ unsafe impl Alloc for Heap {
     }
 }
 
-pub struct LockedHead(Mutex<Heap>);
+pub struct LockedHeap(Mutex<Heap>);
 
-unsafe impl<'a> Alloc for &'a LockedHead {
+unsafe impl<'a> Alloc for &'a LockedHeap {
     unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
         self.0.lock().allocate_first_fit(layout)
     }
