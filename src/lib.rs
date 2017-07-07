@@ -9,9 +9,12 @@ extern crate alloc;
 #[macro_use]
 extern crate std;
 
+extern crate spin;
+
 use hole::{Hole, HoleList};
 use core::mem;
 use alloc::allocator::{Alloc, Layout, AllocErr};
+use spin::Mutex;
 
 mod hole;
 #[cfg(test)]
@@ -127,6 +130,18 @@ unsafe impl Alloc for Heap {
 
     unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         self.deallocate(ptr, layout)
+    }
+}
+
+pub struct LockedHead(Mutex<Heap>);
+
+unsafe impl<'a> Alloc for &'a LockedHead {
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+        self.0.lock().allocate_first_fit(layout)
+    }
+
+    unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+        self.0.lock().deallocate(ptr, layout)
     }
 }
 

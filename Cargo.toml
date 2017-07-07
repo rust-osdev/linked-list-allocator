@@ -11,3 +11,5 @@ repository = "https://github.com/phil-opp/linked-list-allocator"
 documentation = "https://docs.rs/spin"
 homepage = "http://os.phil-opp.com/kernel-heap.html#a-better-allocator"
 
+[dependencies]
+spin = "0.4.5"
