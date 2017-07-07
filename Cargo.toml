@@ -8,9 +8,6 @@ description = "Simple allocator usable for no_std systems. It builds a linked li
 keywords = ["allocator", "no_std", "malloc", "heap", "kernel"]
 
 repository = "https://github.com/phil-opp/linked-list-allocator"
-documentation = "http://phil-opp.github.io/linked-list-allocator/linked_list_allocator/index.html"
+documentation = "https://docs.rs/spin"
 homepage = "http://os.phil-opp.com/kernel-heap.html#a-better-allocator"
 
-exclude = [
-    "scripts/*"
-]
