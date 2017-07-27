@@ -38,7 +38,7 @@ impl HoleList {
         HoleList {
             first: Hole {
                 size: 0,
-                next: Some(Unique::new(ptr)),
+                next: Some(Unique::new_unchecked(ptr)),
             },
         }
     }
@@ -301,7 +301,7 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
                 let ptr = addr as *mut Hole;
                 mem::replace(unsafe { &mut *ptr }, new_hole);
                 // add the F block as the next block of the X block
-                hole.next = Some(unsafe { Unique::new(ptr) });
+                hole.next = Some(unsafe { Unique::new_unchecked(ptr) });
             }
         }
         break;
