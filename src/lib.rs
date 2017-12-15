@@ -132,6 +132,10 @@ unsafe impl Alloc for Heap {
     unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         self.deallocate(ptr, layout)
     }
+
+    fn oom(&mut self, _: AllocErr) -> ! {
+        panic!("Out of memory");
+    }
 }
 
 pub struct LockedHeap(Mutex<Heap>);
