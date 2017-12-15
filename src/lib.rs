@@ -175,6 +175,10 @@ unsafe impl<'a> Alloc for &'a LockedHeap {
     unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         self.0.lock().deallocate(ptr, layout)
     }
+
+    fn oom(&mut self, _: AllocErr) -> ! {
+        panic!("Out of memory");
+    }
 }
 
 /// Align downwards. Returns the greatest x with alignment `align`
