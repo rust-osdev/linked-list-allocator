@@ -9,12 +9,15 @@ extern crate alloc;
 #[macro_use]
 extern crate std;
 
+#[cfg(feature = "use_spin")]
 extern crate spin;
 
 use hole::{Hole, HoleList};
 use core::mem;
+#[cfg(feature = "use_spin")]
 use core::ops::Deref;
 use alloc::allocator::{Alloc, Layout, AllocErr};
+#[cfg(feature = "use_spin")]
 use spin::Mutex;
 
 mod hole;
@@ -138,8 +141,10 @@ unsafe impl Alloc for Heap {
     }
 }
 
+#[cfg(feature = "use_spin")]
 pub struct LockedHeap(Mutex<Heap>);
 
+#[cfg(feature = "use_spin")]
 impl LockedHeap {
     /// Creates an empty heap. All allocate calls will return `None`.
     pub const fn empty() -> LockedHeap {
@@ -159,6 +164,7 @@ impl LockedHeap {
     }
 }
 
+#[cfg(feature = "use_spin")]
 impl Deref for LockedHeap {
     type Target = Mutex<Heap>;
 
@@ -167,6 +173,7 @@ impl Deref for LockedHeap {
     }
 }
 
+#[cfg(feature = "use_spin")]
 unsafe impl<'a> Alloc for &'a LockedHeap {
     unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
         self.0.lock().allocate_first_fit(layout)
