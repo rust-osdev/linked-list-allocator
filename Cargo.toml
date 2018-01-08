@@ -11,5 +11,10 @@ repository = "https://github.com/phil-opp/linked-list-allocator"
 documentation = "https://docs.rs/crate/linked_list_allocator"
 homepage = "http://os.phil-opp.com/kernel-heap.html#a-better-allocator"
 
-[dependencies]
+[features]
+default = ["use_spin"]
+use_spin = ["spin"]
+
+[dependencies.spin]
 spin = "0.4.5"
+optional = true
