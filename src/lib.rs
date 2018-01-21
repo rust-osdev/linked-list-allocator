@@ -2,6 +2,7 @@
 #![feature(const_fn)]
 #![feature(alloc, allocator_api)]
 #![no_std]
+#![feature(ptr_internals)]
 
 extern crate alloc;
 
