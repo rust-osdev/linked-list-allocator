@@ -1,4 +1,3 @@
-use core::ptr::Unique;
 use core::mem::size_of;
 use alloc::allocator::{Layout, AllocErr};
 
@@ -32,7 +31,7 @@ impl HoleList {
         HoleList {
             first: Hole {
                 size: 0,
-                next: Some(Unique::new_unchecked(ptr)),
+                next: Some(&mut *ptr),
             },
         }
     }
@@ -75,9 +74,7 @@ impl HoleList {
     /// Returns information about the first hole for test purposes.
     #[cfg(test)]
     pub fn first_hole(&self) -> Option<(usize, usize)> {
-        self.first.next.as_ref().map(|hole| {
-            (hole.as_ptr() as usize, unsafe { hole.as_ref().size })
-        })
+        self.first.next.as_ref().map(|hole| ((*hole) as *const Hole as usize, hole.size))
     }
 }
 
@@ -85,13 +82,13 @@ impl HoleList {
 #[cfg(not(test))]
 pub struct Hole {
     size: usize,
-    next: Option<Unique<Hole>>,
+    next: Option<&'static mut Hole>,
 }
 
 #[cfg(test)]
 pub struct Hole {
     pub size: usize,
-    pub next: Option<Unique<Hole>>,
+    pub next: Option<&'static mut Hole>,
 }
 
 impl Hole {
@@ -101,11 +98,6 @@ impl Hole {
             addr: self as *const _ as usize,
             size: self.size,
         }
-    }
-
-    /// Returns a reference to the next hole. Panics if this is the last hole.
-    fn next_unwrap(&mut self) -> &mut Hole {
-        unsafe { self.next.as_mut().unwrap().as_mut() }
     }
 }
 
@@ -193,17 +185,17 @@ fn split_hole(hole: HoleInfo, required_layout: Layout) -> Option<Allocation> {
 fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Result<Allocation, AllocErr> {
     loop {
         let allocation: Option<Allocation> = previous.next.as_mut().and_then(|current| {
-            split_hole(unsafe { current.as_ref() }.info(), layout.clone())
+            split_hole(current.info(), layout.clone())
         });
         match allocation {
             Some(allocation) => {
                 // hole is big enough, so remove it from the list by updating the previous pointer
-                previous.next = previous.next_unwrap().next.take();
+                previous.next = previous.next.as_mut().unwrap().next.take();
                 return Ok(allocation);
             }
             None if previous.next.is_some() => {
                 // try next hole
-                previous = move_helper(previous).next_unwrap();
+                previous = move_helper(previous).next.as_mut().unwrap();
             }
             None => {
                 // this was the last hole, so no hole is big enough -> allocation not possible
@@ -237,9 +229,7 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
         );
 
         // get information about the next block
-        let next_hole_info = hole.next
-            .as_ref()
-            .map(|next| unsafe { next.as_ref().info() });
+        let next_hole_info = hole.next.as_ref().map(|next| next.info());
 
         match next_hole_info {
             Some(next) if hole_addr + hole.size == addr && addr + size == next.addr => {
@@ -248,7 +238,7 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
                 // after:   ___XXXFFFFYYYYY____    where F is the freed block
 
                 hole.size += size + next.size; // merge the F and Y blocks to this X block
-                hole.next = hole.next_unwrap().next.take(); // remove the Y block
+                hole.next = hole.next.as_mut().unwrap().next.take(); // remove the Y block
             }
             _ if hole_addr + hole.size == addr => {
                 // block is right behind this hole but there is used memory after it
@@ -266,7 +256,7 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
                 // before:  ___XXX______YYYYY____    where X is this hole and Y the next hole
                 // after:   ___XXX__FFFFYYYYY____    where F is the freed block
 
-                hole.next = hole.next_unwrap().next.take(); // remove the Y block
+                hole.next = hole.next.as_mut().unwrap().next.take(); // remove the Y block
                 size += next.size; // free the merged F/Y block in next iteration
                 continue;
             }
@@ -275,7 +265,7 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
                 // before:  ___XXX__YYYYY________    where X is this hole and Y the next hole
                 // after:   ___XXX__YYYYY__FFFF__    where F is the freed block
 
-                hole = move_helper(hole).next_unwrap(); // start next iteration at next hole
+                hole = move_helper(hole).next.as_mut().unwrap(); // start next iteration at next hole
                 continue;
             }
             _ => {
@@ -295,7 +285,7 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
                 let ptr = addr as *mut Hole;
                 unsafe { ptr.write(new_hole) };
                 // add the F block as the next block of the X block
-                hole.next = Some(unsafe { Unique::new_unchecked(ptr) });
+                hole.next = Some(unsafe { &mut *ptr });
             }
         }
         break;
