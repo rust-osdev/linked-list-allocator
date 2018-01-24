@@ -1,5 +1,5 @@
 use core::ptr::Unique;
-use core::mem::{self, size_of};
+use core::mem::size_of;
 use alloc::allocator::{Layout, AllocErr};
 
 use super::align_up;
@@ -27,13 +27,7 @@ impl HoleList {
         assert!(size_of::<Hole>() == Self::min_size());
 
         let ptr = hole_addr as *mut Hole;
-        mem::replace(
-            &mut *ptr,
-            Hole {
-                size: hole_size,
-                next: None,
-            },
-        );
+        ptr.write(Hole { size: hole_size, next: None, });
 
         HoleList {
             first: Hole {
@@ -299,7 +293,7 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
                 };
                 // write the new hole to the freed memory
                 let ptr = addr as *mut Hole;
-                mem::replace(unsafe { &mut *ptr }, new_hole);
+                unsafe { ptr.write(new_hole) };
                 // add the F block as the next block of the X block
                 hole.next = Some(unsafe { Unique::new_unchecked(ptr) });
             }

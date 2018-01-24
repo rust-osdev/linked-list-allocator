@@ -1,6 +1,7 @@
 #![feature(unique)]
 #![feature(const_fn)]
 #![feature(alloc, allocator_api)]
+#![feature(pointer_methods)]
 #![no_std]
 #![feature(ptr_internals)]
 
