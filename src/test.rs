@@ -28,7 +28,7 @@ fn new_max_heap() -> Heap {
 fn empty() {
     let mut heap = Heap::empty();
     let layout = Layout::from_size_align(1, 1).unwrap();
-    assert!(heap.allocate_first_fit(layout.clone()).is_err());
+    assert!(heap.allocate_first_fit(layout.clone()) as *mut u8 == core::ptr::null_mut());
 }
 
 #[test]
@@ -36,7 +36,7 @@ fn oom() {
     let mut heap = new_heap();
     let layout = Layout::from_size_align(heap.size() + 1, align_of::<usize>());
     let addr = heap.allocate_first_fit(layout.unwrap());
-    assert!(addr.is_err());
+    assert!(addr as *mut u8 == core::ptr::null_mut());
 }
 
 #[test]
@@ -45,15 +45,14 @@ fn allocate_double_usize() {
     let size = size_of::<usize>() * 2;
     let layout = Layout::from_size_align(size, align_of::<usize>());
     let addr = heap.allocate_first_fit(layout.unwrap());
-    assert!(addr.is_ok());
-    let addr = addr.unwrap() as usize;
-    assert!(addr == heap.bottom);
+    assert!(addr as *mut u8 != core::ptr::null_mut());
+    assert!(addr as usize == heap.bottom);
     let (hole_addr, hole_size) = heap.holes.first_hole().expect("ERROR: no hole left");
     assert!(hole_addr == heap.bottom + size);
     assert!(hole_size == heap.size - size);
 
     unsafe {
-        assert_eq!((*((addr + size) as *const Hole)).size, heap.size - size);
+        assert_eq!((*((addr as usize + size) as *const Hole)).size, heap.size - size);
     }
 }
 
@@ -62,7 +61,7 @@ fn allocate_and_free_double_usize() {
     let mut heap = new_heap();
 
     let layout = Layout::from_size_align(size_of::<usize>() * 2, align_of::<usize>()).unwrap();
-    let x = heap.allocate_first_fit(layout.clone()).unwrap();
+    let x = heap.allocate_first_fit(layout.clone());
     unsafe {
         *(x as *mut (usize, usize)) = (0xdeafdeadbeafbabe, 0xdeafdeadbeafbabe);
 
@@ -77,9 +76,9 @@ fn deallocate_right_before() {
     let mut heap = new_heap();
     let layout = Layout::from_size_align(size_of::<usize>() * 5, 1).unwrap();
 
-    let x = heap.allocate_first_fit(layout.clone()).unwrap();
-    let y = heap.allocate_first_fit(layout.clone()).unwrap();
-    let z = heap.allocate_first_fit(layout.clone()).unwrap();
+    let x = heap.allocate_first_fit(layout.clone());
+    let y = heap.allocate_first_fit(layout.clone());
+    let z = heap.allocate_first_fit(layout.clone());
 
     unsafe {
         heap.deallocate(y, layout.clone());
@@ -97,9 +96,9 @@ fn deallocate_right_behind() {
     let size = size_of::<usize>() * 5;
     let layout = Layout::from_size_align(size, 1).unwrap();
 
-    let x = heap.allocate_first_fit(layout.clone()).unwrap();
-    let y = heap.allocate_first_fit(layout.clone()).unwrap();
-    let z = heap.allocate_first_fit(layout.clone()).unwrap();
+    let x = heap.allocate_first_fit(layout.clone());
+    let y = heap.allocate_first_fit(layout.clone());
+    let z = heap.allocate_first_fit(layout.clone());
 
     unsafe {
         heap.deallocate(x, layout.clone());
@@ -117,10 +116,10 @@ fn deallocate_middle() {
     let size = size_of::<usize>() * 5;
     let layout = Layout::from_size_align(size, 1).unwrap();
 
-    let x = heap.allocate_first_fit(layout.clone()).unwrap();
-    let y = heap.allocate_first_fit(layout.clone()).unwrap();
-    let z = heap.allocate_first_fit(layout.clone()).unwrap();
-    let a = heap.allocate_first_fit(layout.clone()).unwrap();
+    let x = heap.allocate_first_fit(layout.clone());
+    let y = heap.allocate_first_fit(layout.clone());
+    let z = heap.allocate_first_fit(layout.clone());
+    let a = heap.allocate_first_fit(layout.clone());
 
     unsafe {
         heap.deallocate(x, layout.clone());
@@ -141,12 +140,12 @@ fn reallocate_double_usize() {
 
     let layout = Layout::from_size_align(size_of::<usize>() * 2, align_of::<usize>()).unwrap();
 
-    let x = heap.allocate_first_fit(layout.clone()).unwrap();
+    let x = heap.allocate_first_fit(layout.clone());
     unsafe {
         heap.deallocate(x, layout.clone());
     }
 
-    let y = heap.allocate_first_fit(layout.clone()).unwrap();
+    let y = heap.allocate_first_fit(layout.clone());
     unsafe {
         heap.deallocate(y, layout.clone());
     }
@@ -165,18 +164,18 @@ fn allocate_multiple_sizes() {
     let layout_3 = Layout::from_size_align(base_size * 3, base_align * 4).unwrap();
     let layout_4 = Layout::from_size_align(base_size * 4, base_align).unwrap();
 
-    let x = heap.allocate_first_fit(layout_1.clone()).unwrap();
-    let y = heap.allocate_first_fit(layout_2.clone()).unwrap();
+    let x = heap.allocate_first_fit(layout_1.clone());
+    let y = heap.allocate_first_fit(layout_2.clone());
     assert_eq!(y as usize, x as usize + base_size * 2);
-    let z = heap.allocate_first_fit(layout_3.clone()).unwrap();
+    let z = heap.allocate_first_fit(layout_3.clone());
     assert_eq!(z as usize % (base_size * 4), 0);
 
     unsafe {
         heap.deallocate(x, layout_1.clone());
     }
 
-    let a = heap.allocate_first_fit(layout_4.clone()).unwrap();
-    let b = heap.allocate_first_fit(layout_1.clone()).unwrap();
+    let a = heap.allocate_first_fit(layout_4.clone());
+    let b = heap.allocate_first_fit(layout_1.clone());
     assert_eq!(b, x);
 
     unsafe {
@@ -193,7 +192,7 @@ fn allocate_usize() {
 
     let layout = Layout::from_size_align(size_of::<usize>(), 1).unwrap();
 
-    assert!(heap.allocate_first_fit(layout.clone()).is_ok());
+    assert!(heap.allocate_first_fit(layout.clone()) as *mut u8 != core::ptr::null_mut());
 }
 
 #[test]
@@ -203,15 +202,14 @@ fn allocate_usize_in_bigger_block() {
     let layout_1 = Layout::from_size_align(size_of::<usize>() * 2, 1).unwrap();
     let layout_2 = Layout::from_size_align(size_of::<usize>(), 1).unwrap();
 
-    let x = heap.allocate_first_fit(layout_1.clone()).unwrap();
-    let y = heap.allocate_first_fit(layout_1.clone()).unwrap();
+    let x = heap.allocate_first_fit(layout_1.clone());
+    let y = heap.allocate_first_fit(layout_1.clone());
     unsafe {
         heap.deallocate(x, layout_1.clone());
     }
 
     let z = heap.allocate_first_fit(layout_2.clone());
-    assert!(z.is_ok());
-    let z = z.unwrap();
+    assert!(z as *mut u8 != core::ptr::null_mut());
     assert_eq!(x, z);
 
     unsafe {
@@ -229,9 +227,9 @@ fn align_from_small_to_big() {
     let layout_2 = Layout::from_size_align(8, 8).unwrap();
 
     // allocate 28 bytes so that the heap end is only 4 byte aligned
-    assert!(heap.allocate_first_fit(layout_1.clone()).is_ok());
+    assert!(heap.allocate_first_fit(layout_1.clone()) as *mut u8 != core::ptr::null_mut());
     // try to allocate a 8 byte aligned block
-    assert!(heap.allocate_first_fit(layout_2.clone()).is_ok());
+    assert!(heap.allocate_first_fit(layout_2.clone()) as *mut u8 != core::ptr::null_mut());
 }
 
 #[test]
@@ -244,7 +242,7 @@ fn extend_empty_heap() {
 
     // Try to allocate full heap after extend
     let layout = Layout::from_size_align(2048, 1).unwrap();
-    assert!(heap.allocate_first_fit(layout.clone()).is_ok());
+    assert!(heap.allocate_first_fit(layout.clone()) as *mut u8 != core::ptr::null_mut());
 }
 
 #[test]
@@ -254,11 +252,11 @@ fn extend_full_heap() {
     let layout = Layout::from_size_align(1024, 1).unwrap();
 
     // Allocate full heap, extend and allocate again to the max
-    assert!(heap.allocate_first_fit(layout.clone()).is_ok());
+    assert!(heap.allocate_first_fit(layout.clone()) as *mut u8 != core::ptr::null_mut());
     unsafe {
         heap.extend(1024);
     }
-    assert!(heap.allocate_first_fit(layout.clone()).is_ok());
+    assert!(heap.allocate_first_fit(layout.clone()) as *mut u8 != core::ptr::null_mut());
 }
 
 #[test]
@@ -271,12 +269,12 @@ fn extend_fragmented_heap() {
     let alloc1 = heap.allocate_first_fit(layout_1.clone());
     let alloc2 = heap.allocate_first_fit(layout_1.clone());
 
-    assert!(alloc1.is_ok());
-    assert!(alloc2.is_ok());
+    assert!(alloc1 as *mut u8 != core::ptr::null_mut());
+    assert!(alloc2 as *mut u8 != core::ptr::null_mut());
 
     unsafe {
         // Create a hole at the beginning of the heap
-        heap.deallocate(alloc1.unwrap(), layout_1.clone());
+        heap.deallocate(alloc1, layout_1.clone());
     }
 
     unsafe {
@@ -285,5 +283,5 @@ fn extend_fragmented_heap() {
 
     // We got additional 1024 bytes hole at the end of the heap
     // Try to allocate there
-    assert!(heap.allocate_first_fit(layout_2.clone()).is_ok());
+    assert!(heap.allocate_first_fit(layout_2.clone()) as *mut u8 != core::ptr::null_mut());
 }
