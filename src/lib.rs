@@ -23,9 +23,6 @@ mod hole;
 #[cfg(test)]
 mod test;
 
-#[cfg(feature = "use_spin")]
-pub static mut LOCKED_ALLOCATOR: LockedHeap = LockedHeap::empty();
-
 /// A fixed size heap backed by a linked list of free memory blocks.
 pub struct Heap {
     bottom: usize,
@@ -176,15 +173,15 @@ impl Deref for LockedHeap {
 }
 
 #[cfg(feature = "use_spin")]
-unsafe impl<'a> GlobalAlloc for &'a LockedHeap {
+unsafe impl GlobalAlloc for LockedHeap {
     unsafe fn alloc(&self, layout: Layout) -> *mut Opaque {
-        LOCKED_ALLOCATOR.0.lock().allocate_first_fit(layout).ok().map_or(0 as *mut Opaque, |allocation| {
+        self.0.lock().allocate_first_fit(layout).ok().map_or(0 as *mut Opaque, |allocation| {
             allocation.as_ptr()
         })
     }
 
     unsafe fn dealloc(&self, ptr: *mut Opaque, layout: Layout) {
-        LOCKED_ALLOCATOR.0.lock().deallocate(NonNull::new_unchecked(ptr), layout)
+        self.0.lock().deallocate(NonNull::new_unchecked(ptr), layout)
     }
 
     fn oom(&self) -> ! {
