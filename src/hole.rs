@@ -1,5 +1,6 @@
+use core::ptr::NonNull;
 use core::mem::size_of;
-use core::alloc::{Layout, Opaque};
+use core::alloc::{Layout, Opaque, AllocErr};
 
 use super::align_up;
 
@@ -42,17 +43,17 @@ impl HoleList {
     /// block is returned.
     /// This function uses the “first fit” strategy, so it uses the first hole that is big
     /// enough. Thus the runtime is in O(n) but it should be reasonably fast for small allocations.
-    pub fn allocate_first_fit(&mut self, layout: Layout) -> *mut Opaque {
+    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<Opaque>, AllocErr> {
         assert!(layout.size() >= Self::min_size());
 
-        allocate_first_fit(&mut self.first, layout).map_or(0 as *mut Opaque, |allocation| {
+        allocate_first_fit(&mut self.first, layout).map(|allocation| {
             if let Some(padding) = allocation.front_padding {
                 deallocate(&mut self.first, padding.addr, padding.size);
             }
             if let Some(padding) = allocation.back_padding {
                 deallocate(&mut self.first, padding.addr, padding.size);
             }
-            allocation.info.addr as *mut Opaque
+            NonNull::new(allocation.info.addr as *mut Opaque).unwrap()
         })
     }
 
@@ -62,8 +63,8 @@ impl HoleList {
     /// This function walks the list and inserts the given block at the correct place. If the freed
     /// block is adjacent to another free block, the blocks are merged again.
     /// This operation is in `O(n)` since the list needs to be sorted by address.
-    pub unsafe fn deallocate(&mut self, ptr: *mut Opaque, layout: Layout) {
-        deallocate(&mut self.first, ptr as usize, layout.size())
+    pub unsafe fn deallocate(&mut self, ptr: NonNull<Opaque>, layout: Layout) {
+        deallocate(&mut self.first, ptr.as_ptr() as usize, layout.size())
     }
 
     /// Returns the minimal allocation size. Smaller allocations or deallocations are not allowed.
@@ -182,7 +183,7 @@ fn split_hole(hole: HoleInfo, required_layout: Layout) -> Option<Allocation> {
 /// care of freeing it again.
 /// This function uses the “first fit” strategy, so it breaks as soon as a big enough hole is
 /// found (and returns it).
-fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Option<Allocation> {
+fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Result<Allocation, AllocErr> {
     loop {
         let allocation: Option<Allocation> = previous.next.as_mut().and_then(|current| {
             split_hole(current.info(), layout.clone())
@@ -191,7 +192,7 @@ fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Option<Allocat
             Some(allocation) => {
                 // hole is big enough, so remove it from the list by updating the previous pointer
                 previous.next = previous.next.as_mut().unwrap().next.take();
-                return Some(allocation);
+                return Ok(allocation);
             }
             None if previous.next.is_some() => {
                 // try next hole
@@ -199,7 +200,7 @@ fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Option<Allocat
             }
             None => {
                 // this was the last hole, so no hole is big enough -> allocation not possible
-                return None;
+                return Err(AllocErr);
             }
         }
     }
