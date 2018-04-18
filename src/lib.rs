@@ -3,8 +3,6 @@
 #![feature(pointer_methods)]
 #![no_std]
 
-extern crate alloc;
-
 #[cfg(test)]
 #[macro_use]
 extern crate std;
@@ -14,9 +12,10 @@ extern crate spin;
 
 use hole::{Hole, HoleList};
 use core::mem;
+use core::ptr::NonNull;
 #[cfg(feature = "use_spin")]
 use core::ops::Deref;
-use alloc::allocator::{Alloc, Layout, AllocErr};
+use core::alloc::{Alloc, GlobalAlloc, AllocErr, Layout, Opaque};
 #[cfg(feature = "use_spin")]
 use spin::Mutex;
 
@@ -70,7 +69,7 @@ impl Heap {
     /// This function scans the list of free memory blocks and uses the first block that is big
     /// enough. The runtime is in O(n) where n is the number of free blocks, but it should be
     /// reasonably fast for small allocations.
-    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<Opaque>, AllocErr> {
         let mut size = layout.size();
         if size < HoleList::min_size() {
             size = HoleList::min_size();
@@ -88,7 +87,7 @@ impl Heap {
     /// This function walks the list of free memory blocks and inserts the freed block at the
     /// correct place. If the freed block is adjacent to another free block, the blocks are merged
     /// again. This operation is in `O(n)` since the list needs to be sorted by address.
-    pub unsafe fn deallocate(&mut self, ptr: *mut u8, layout: Layout) {
+    pub unsafe fn deallocate(&mut self, ptr: NonNull<Opaque>, layout: Layout) {
         let mut size = layout.size();
         if size < HoleList::min_size() {
             size = HoleList::min_size();
@@ -122,21 +121,21 @@ impl Heap {
     pub unsafe fn extend(&mut self, by: usize) {
         let top = self.top();
         let layout = Layout::from_size_align(by, 1).unwrap();
-        self.holes.deallocate(top as *mut u8, layout);
+        self.holes.deallocate(NonNull::new_unchecked(top as *mut Opaque), layout);
         self.size += by;
     }
 }
 
 unsafe impl Alloc for Heap {
-    unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<NonNull<Opaque>, AllocErr> {
         self.allocate_first_fit(layout)
     }
 
-    unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+    unsafe fn dealloc(&mut self, ptr: NonNull<Opaque>, layout: Layout) {
         self.deallocate(ptr, layout)
     }
 
-    fn oom(&mut self, _: AllocErr) -> ! {
+    fn oom(&mut self) -> ! {
         panic!("Out of memory");
     }
 }
@@ -174,16 +173,18 @@ impl Deref for LockedHeap {
 }
 
 #[cfg(feature = "use_spin")]
-unsafe impl<'a> Alloc for &'a LockedHeap {
-    unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
-        self.0.lock().allocate_first_fit(layout)
+unsafe impl GlobalAlloc for LockedHeap {
+    unsafe fn alloc(&self, layout: Layout) -> *mut Opaque {
+        self.0.lock().allocate_first_fit(layout).ok().map_or(0 as *mut Opaque, |allocation| {
+            allocation.as_ptr()
+        })
     }
 
-    unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
-        self.0.lock().deallocate(ptr, layout)
+    unsafe fn dealloc(&self, ptr: *mut Opaque, layout: Layout) {
+        self.0.lock().deallocate(NonNull::new_unchecked(ptr), layout)
     }
 
-    fn oom(&mut self, _: AllocErr) -> ! {
+    fn oom(&self) -> ! {
         panic!("Out of memory");
     }
 }

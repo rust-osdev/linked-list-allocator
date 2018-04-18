@@ -1,5 +1,6 @@
+use core::ptr::NonNull;
 use core::mem::size_of;
-use alloc::allocator::{Layout, AllocErr};
+use core::alloc::{Layout, Opaque, AllocErr};
 
 use super::align_up;
 
@@ -42,7 +43,7 @@ impl HoleList {
     /// block is returned.
     /// This function uses the “first fit” strategy, so it uses the first hole that is big
     /// enough. Thus the runtime is in O(n) but it should be reasonably fast for small allocations.
-    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<Opaque>, AllocErr> {
         assert!(layout.size() >= Self::min_size());
 
         allocate_first_fit(&mut self.first, layout).map(|allocation| {
@@ -52,7 +53,7 @@ impl HoleList {
             if let Some(padding) = allocation.back_padding {
                 deallocate(&mut self.first, padding.addr, padding.size);
             }
-            allocation.info.addr as *mut u8
+            NonNull::new(allocation.info.addr as *mut Opaque).unwrap()
         })
     }
 
@@ -62,8 +63,8 @@ impl HoleList {
     /// This function walks the list and inserts the given block at the correct place. If the freed
     /// block is adjacent to another free block, the blocks are merged again.
     /// This operation is in `O(n)` since the list needs to be sorted by address.
-    pub unsafe fn deallocate(&mut self, ptr: *mut u8, layout: Layout) {
-        deallocate(&mut self.first, ptr as usize, layout.size())
+    pub unsafe fn deallocate(&mut self, ptr: NonNull<Opaque>, layout: Layout) {
+        deallocate(&mut self.first, ptr.as_ptr() as usize, layout.size())
     }
 
     /// Returns the minimal allocation size. Smaller allocations or deallocations are not allowed.
@@ -199,7 +200,7 @@ fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Result<Allocat
             }
             None => {
                 // this was the last hole, so no hole is big enough -> allocation not possible
-                return Err(AllocErr::Exhausted { request: layout });
+                return Err(AllocErr);
             }
         }
     }
