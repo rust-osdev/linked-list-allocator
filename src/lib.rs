@@ -10,12 +10,12 @@ extern crate std;
 #[cfg(feature = "use_spin")]
 extern crate spin;
 
-use hole::{Hole, HoleList};
+use core::alloc::{Alloc, AllocErr, GlobalAlloc, Layout, Opaque};
 use core::mem;
-use core::ptr::NonNull;
 #[cfg(feature = "use_spin")]
 use core::ops::Deref;
-use core::alloc::{Alloc, GlobalAlloc, AllocErr, Layout, Opaque};
+use core::ptr::NonNull;
+use hole::{Hole, HoleList};
 #[cfg(feature = "use_spin")]
 use spin::Mutex;
 
@@ -121,7 +121,8 @@ impl Heap {
     pub unsafe fn extend(&mut self, by: usize) {
         let top = self.top();
         let layout = Layout::from_size_align(by, 1).unwrap();
-        self.holes.deallocate(NonNull::new_unchecked(top as *mut Opaque), layout);
+        self.holes
+            .deallocate(NonNull::new_unchecked(top as *mut Opaque), layout);
         self.size += by;
     }
 }
@@ -175,13 +176,17 @@ impl Deref for LockedHeap {
 #[cfg(feature = "use_spin")]
 unsafe impl GlobalAlloc for LockedHeap {
     unsafe fn alloc(&self, layout: Layout) -> *mut Opaque {
-        self.0.lock().allocate_first_fit(layout).ok().map_or(0 as *mut Opaque, |allocation| {
-            allocation.as_ptr()
-        })
+        self.0
+            .lock()
+            .allocate_first_fit(layout)
+            .ok()
+            .map_or(0 as *mut Opaque, |allocation| allocation.as_ptr())
     }
 
     unsafe fn dealloc(&self, ptr: *mut Opaque, layout: Layout) {
-        self.0.lock().deallocate(NonNull::new_unchecked(ptr), layout)
+        self.0
+            .lock()
+            .deallocate(NonNull::new_unchecked(ptr), layout)
     }
 
     fn oom(&self) -> ! {

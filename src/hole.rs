@@ -1,6 +1,6 @@
-use core::ptr::NonNull;
+use core::alloc::{AllocErr, Layout, Opaque};
 use core::mem::size_of;
-use core::alloc::{Layout, Opaque, AllocErr};
+use core::ptr::NonNull;
 
 use super::align_up;
 
@@ -27,7 +27,10 @@ impl HoleList {
         assert!(size_of::<Hole>() == Self::min_size());
 
         let ptr = hole_addr as *mut Hole;
-        ptr.write(Hole { size: hole_size, next: None, });
+        ptr.write(Hole {
+            size: hole_size,
+            next: None,
+        });
 
         HoleList {
             first: Hole {
@@ -75,7 +78,10 @@ impl HoleList {
     /// Returns information about the first hole for test purposes.
     #[cfg(test)]
     pub fn first_hole(&self) -> Option<(usize, usize)> {
-        self.first.next.as_ref().map(|hole| ((*hole) as *const Hole as usize, hole.size))
+        self.first
+            .next
+            .as_ref()
+            .map(|hole| ((*hole) as *const Hole as usize, hole.size))
     }
 }
 
@@ -185,9 +191,10 @@ fn split_hole(hole: HoleInfo, required_layout: Layout) -> Option<Allocation> {
 /// found (and returns it).
 fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Result<Allocation, AllocErr> {
     loop {
-        let allocation: Option<Allocation> = previous.next.as_mut().and_then(|current| {
-            split_hole(current.info(), layout.clone())
-        });
+        let allocation: Option<Allocation> = previous
+            .next
+            .as_mut()
+            .and_then(|current| split_hole(current.info(), layout.clone()));
         match allocation {
             Some(allocation) => {
                 // hole is big enough, so remove it from the list by updating the previous pointer

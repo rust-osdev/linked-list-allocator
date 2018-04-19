@@ -1,7 +1,7 @@
-use std::prelude::v1::*;
-use std::mem::{size_of, align_of};
-use core::alloc::Layout;
 use super::*;
+use core::alloc::Layout;
+use std::mem::{align_of, size_of};
+use std::prelude::v1::*;
 
 fn new_heap() -> Heap {
     const HEAP_SIZE: usize = 1000;
