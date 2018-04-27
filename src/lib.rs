@@ -135,10 +135,6 @@ unsafe impl Alloc for Heap {
     unsafe fn dealloc(&mut self, ptr: NonNull<Opaque>, layout: Layout) {
         self.deallocate(ptr, layout)
     }
-
-    fn oom(&mut self) -> ! {
-        panic!("Out of memory");
-    }
 }
 
 #[cfg(feature = "use_spin")]
@@ -187,10 +183,6 @@ unsafe impl GlobalAlloc for LockedHeap {
         self.0
             .lock()
             .deallocate(NonNull::new_unchecked(ptr), layout)
-    }
-
-    fn oom(&self) -> ! {
-        panic!("Out of memory");
     }
 }
 
