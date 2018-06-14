@@ -10,7 +10,10 @@ extern crate std;
 #[cfg(feature = "use_spin")]
 extern crate spin;
 
-use core::alloc::{Alloc, AllocErr, GlobalAlloc, Layout, Opaque};
+extern crate alloc;
+
+use alloc::allocator::{Alloc, AllocErr, Layout};
+use core::alloc::{GlobalAlloc};
 use core::mem;
 #[cfg(feature = "use_spin")]
 use core::ops::Deref;
@@ -69,7 +72,7 @@ impl Heap {
     /// This function scans the list of free memory blocks and uses the first block that is big
     /// enough. The runtime is in O(n) where n is the number of free blocks, but it should be
     /// reasonably fast for small allocations.
-    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<Opaque>, AllocErr> {
+    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<u8>, AllocErr> {
         let mut size = layout.size();
         if size < HoleList::min_size() {
             size = HoleList::min_size();
@@ -87,7 +90,7 @@ impl Heap {
     /// This function walks the list of free memory blocks and inserts the freed block at the
     /// correct place. If the freed block is adjacent to another free block, the blocks are merged
     /// again. This operation is in `O(n)` since the list needs to be sorted by address.
-    pub unsafe fn deallocate(&mut self, ptr: NonNull<Opaque>, layout: Layout) {
+    pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) {
         let mut size = layout.size();
         if size < HoleList::min_size() {
             size = HoleList::min_size();
@@ -122,17 +125,17 @@ impl Heap {
         let top = self.top();
         let layout = Layout::from_size_align(by, 1).unwrap();
         self.holes
-            .deallocate(NonNull::new_unchecked(top as *mut Opaque), layout);
+            .deallocate(NonNull::new_unchecked(top as *mut u8), layout);
         self.size += by;
     }
 }
 
 unsafe impl Alloc for Heap {
-    unsafe fn alloc(&mut self, layout: Layout) -> Result<NonNull<Opaque>, AllocErr> {
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<NonNull<u8>, AllocErr> {
         self.allocate_first_fit(layout)
     }
 
-    unsafe fn dealloc(&mut self, ptr: NonNull<Opaque>, layout: Layout) {
+    unsafe fn dealloc(&mut self, ptr: NonNull<u8>, layout: Layout) {
         self.deallocate(ptr, layout)
     }
 }
@@ -171,15 +174,15 @@ impl Deref for LockedHeap {
 
 #[cfg(feature = "use_spin")]
 unsafe impl GlobalAlloc for LockedHeap {
-    unsafe fn alloc(&self, layout: Layout) -> *mut Opaque {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         self.0
             .lock()
             .allocate_first_fit(layout)
             .ok()
-            .map_or(0 as *mut Opaque, |allocation| allocation.as_ptr())
+            .map_or(0 as *mut u8, |allocation| allocation.as_ptr())
     }
 
-    unsafe fn dealloc(&self, ptr: *mut Opaque, layout: Layout) {
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         self.0
             .lock()
             .deallocate(NonNull::new_unchecked(ptr), layout)
