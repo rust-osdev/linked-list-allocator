@@ -16,5 +16,5 @@ default = ["use_spin"]
 use_spin = ["spin"]
 
 [dependencies.spin]
-version = "0.4.5"
+version = "0.4.8"
 optional = true
