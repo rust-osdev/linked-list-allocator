@@ -12,7 +12,7 @@ extern crate spin;
 
 extern crate alloc;
 
-use alloc::allocator::{Alloc, AllocErr, Layout};
+use alloc::alloc::{Alloc, AllocErr, Layout};
 use core::alloc::{GlobalAlloc};
 use core::mem;
 #[cfg(feature = "use_spin")]

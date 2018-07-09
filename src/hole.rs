@@ -1,4 +1,4 @@
-use alloc::allocator::{AllocErr, Layout};
+use alloc::alloc::{AllocErr, Layout};
 use core::mem::size_of;
 use core::ptr::NonNull;
 
