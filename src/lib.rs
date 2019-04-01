@@ -1,6 +1,5 @@
 #![feature(const_fn)]
 #![feature(alloc, allocator_api)]
-#![feature(pointer_methods)]
 #![no_std]
 
 #[cfg(test)]
