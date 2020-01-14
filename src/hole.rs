@@ -1,5 +1,5 @@
 use alloc::alloc::{AllocErr, Layout};
-use core::mem::size_of;
+use core::mem::{align_of, size_of};
 use core::ptr::NonNull;
 
 use super::align_up;
@@ -23,12 +23,15 @@ impl HoleList {
     /// Creates a `HoleList` that contains the given hole. This function is unsafe because it
     /// creates a hole at the given `hole_addr`. This can cause undefined behavior if this address
     /// is invalid or if memory from the `[hole_addr, hole_addr+size) range is used somewhere else.
+    ///
+    /// The pointer to `hole_addr` is automatically aligned.
     pub unsafe fn new(hole_addr: usize, hole_size: usize) -> HoleList {
         assert!(size_of::<Hole>() == Self::min_size());
 
-        let ptr = hole_addr as *mut Hole;
+        let aligned_hole_addr = align_up(hole_addr, align_of::<Hole>());
+        let ptr = aligned_hole_addr as *mut Hole;
         ptr.write(Hole {
-            size: hole_size,
+            size: hole_size.saturating_sub(aligned_hole_addr - hole_addr),
             next: None,
         });
 
@@ -290,6 +293,7 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
                     next: hole.next.take(), // the reference to the Y block (if it exists)
                 };
                 // write the new hole to the freed memory
+                debug_assert_eq!(addr % align_of::<Hole>(), 0);
                 let ptr = addr as *mut Hole;
                 unsafe { ptr.write(new_hole) };
                 // add the F block as the next block of the X block
