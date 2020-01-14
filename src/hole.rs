@@ -23,6 +23,8 @@ impl HoleList {
     /// Creates a `HoleList` that contains the given hole. This function is unsafe because it
     /// creates a hole at the given `hole_addr`. This can cause undefined behavior if this address
     /// is invalid or if memory from the `[hole_addr, hole_addr+size) range is used somewhere else.
+    ///
+    /// The pointer to `hole_addr` is automatically aligned.
     pub unsafe fn new(hole_addr: usize, hole_size: usize) -> HoleList {
         assert!(size_of::<Hole>() == Self::min_size());
 
