@@ -1,0 +1,1 @@
+- Align up the Hole initialization address ([#18](https://github.com/phil-opp/linked-list-allocator/pull/18))
