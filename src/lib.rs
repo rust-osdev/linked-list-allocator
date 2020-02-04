@@ -11,7 +11,7 @@ extern crate spin;
 
 extern crate alloc;
 
-use alloc::alloc::{Alloc, AllocErr, Layout};
+use alloc::alloc::{AllocRef, AllocErr, Layout};
 use core::alloc::{GlobalAlloc};
 use core::mem;
 #[cfg(feature = "use_spin")]
@@ -129,7 +129,7 @@ impl Heap {
     }
 }
 
-unsafe impl Alloc for Heap {
+unsafe impl AllocRef for Heap {
     unsafe fn alloc(&mut self, layout: Layout) -> Result<NonNull<u8>, AllocErr> {
         self.allocate_first_fit(layout)
     }
