@@ -1,3 +1,5 @@
+# 0.6.6
+
 - The `Alloc` trait was renamed to `AllocRef` ([#20](https://github.com/phil-opp/linked-list-allocator/pull/20))
 
 # 0.6.5
