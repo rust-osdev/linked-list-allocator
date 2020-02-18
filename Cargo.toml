@@ -13,8 +13,9 @@ homepage = "http://os.phil-opp.com/kernel-heap.html#a-better-allocator"
 
 [features]
 default = ["use_spin"]
-use_spin = ["spin"]
+use_spin = ["spinning_top"]
 
-[dependencies.spin]
-version = "0.5.0"
+[dependencies.spinning_top]
+version = "0.1.0"
+features = ["nightly"]
 optional = true

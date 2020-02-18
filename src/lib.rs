@@ -7,19 +7,19 @@
 extern crate std;
 
 #[cfg(feature = "use_spin")]
-extern crate spin;
+extern crate spinning_top;
 
 extern crate alloc;
 
-use alloc::alloc::{AllocRef, AllocErr, Layout};
-use core::alloc::{GlobalAlloc};
+use alloc::alloc::{AllocErr, AllocRef, Layout};
+use core::alloc::GlobalAlloc;
 use core::mem;
 #[cfg(feature = "use_spin")]
 use core::ops::Deref;
 use core::ptr::NonNull;
 use hole::{Hole, HoleList};
 #[cfg(feature = "use_spin")]
-use spin::Mutex;
+use spinning_top::Spinlock;
 
 mod hole;
 #[cfg(test)]
@@ -140,13 +140,13 @@ unsafe impl AllocRef for Heap {
 }
 
 #[cfg(feature = "use_spin")]
-pub struct LockedHeap(Mutex<Heap>);
+pub struct LockedHeap(Spinlock<Heap>);
 
 #[cfg(feature = "use_spin")]
 impl LockedHeap {
     /// Creates an empty heap. All allocate calls will return `None`.
     pub const fn empty() -> LockedHeap {
-        LockedHeap(Mutex::new(Heap::empty()))
+        LockedHeap(Spinlock::new(Heap::empty()))
     }
 
     /// Creates a new heap with the given `bottom` and `size`. The bottom address must be valid
@@ -154,7 +154,7 @@ impl LockedHeap {
     /// anything else. This function is unsafe because it can cause undefined behavior if the
     /// given address is invalid.
     pub unsafe fn new(heap_bottom: usize, heap_size: usize) -> LockedHeap {
-        LockedHeap(Mutex::new(Heap {
+        LockedHeap(Spinlock::new(Heap {
             bottom: heap_bottom,
             size: heap_size,
             holes: HoleList::new(heap_bottom, heap_size),
@@ -164,9 +164,9 @@ impl LockedHeap {
 
 #[cfg(feature = "use_spin")]
 impl Deref for LockedHeap {
-    type Target = Mutex<Heap>;
+    type Target = Spinlock<Heap>;
 
-    fn deref(&self) -> &Mutex<Heap> {
+    fn deref(&self) -> &Spinlock<Heap> {
         &self.0
     }
 }
