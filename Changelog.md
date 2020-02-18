@@ -1,4 +1,4 @@
-0.6.7
+# 0.7.0
 
 - Use new spinning_top crate instead of `spin` ([#23](https://github.com/phil-opp/linked-list-allocator/pull/23))
 
