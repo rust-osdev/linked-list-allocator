@@ -130,8 +130,8 @@ impl Heap {
 }
 
 unsafe impl AllocRef for Heap {
-    unsafe fn alloc(&mut self, layout: Layout) -> Result<NonNull<u8>, AllocErr> {
-        self.allocate_first_fit(layout)
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<(NonNull<u8>, usize), AllocErr> {
+        Ok((self.allocate_first_fit(layout)?, layout.size()))
     }
 
     unsafe fn dealloc(&mut self, ptr: NonNull<u8>, layout: Layout) {
