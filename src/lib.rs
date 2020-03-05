@@ -71,7 +71,7 @@ impl Heap {
     /// This function scans the list of free memory blocks and uses the first block that is big
     /// enough. The runtime is in O(n) where n is the number of free blocks, but it should be
     /// reasonably fast for small allocations.
-    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<u8>, AllocErr> {
+    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<(NonNull<u8>, usize), AllocErr> {
         let mut size = layout.size();
         if size < HoleList::min_size() {
             size = HoleList::min_size();
@@ -130,7 +130,7 @@ impl Heap {
 }
 
 unsafe impl AllocRef for Heap {
-    unsafe fn alloc(&mut self, layout: Layout) -> Result<NonNull<u8>, AllocErr> {
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<(NonNull<u8>, usize), AllocErr> {
         self.allocate_first_fit(layout)
     }
 
@@ -178,7 +178,7 @@ unsafe impl GlobalAlloc for LockedHeap {
             .lock()
             .allocate_first_fit(layout)
             .ok()
-            .map_or(0 as *mut u8, |allocation| allocation.as_ptr())
+            .map_or(0 as *mut u8, |allocation| allocation.0.as_ptr())
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
