@@ -1,5 +1,5 @@
 #![feature(const_fn)]
-#![feature(allocator_api)]
+#![cfg_attr(feature = "alloc_ref", feature(allocator_api))]
 #![no_std]
 
 #[cfg(test)]
@@ -11,7 +11,9 @@ extern crate spinning_top;
 
 extern crate alloc;
 
-use alloc::alloc::{AllocErr, AllocRef, Layout};
+use alloc::alloc::Layout;
+#[cfg(feature = "alloc_ref")]
+use alloc::alloc::{AllocErr, AllocRef};
 use core::alloc::GlobalAlloc;
 use core::mem;
 #[cfg(feature = "use_spin")]
@@ -71,7 +73,7 @@ impl Heap {
     /// This function scans the list of free memory blocks and uses the first block that is big
     /// enough. The runtime is in O(n) where n is the number of free blocks, but it should be
     /// reasonably fast for small allocations.
-    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<u8>, AllocErr> {
+    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<u8>, ()> {
         let mut size = layout.size();
         if size < HoleList::min_size() {
             size = HoleList::min_size();
@@ -129,9 +131,13 @@ impl Heap {
     }
 }
 
+#[cfg(feature = "alloc_ref")]
 unsafe impl AllocRef for Heap {
     unsafe fn alloc(&mut self, layout: Layout) -> Result<(NonNull<u8>, usize), AllocErr> {
-        Ok((self.allocate_first_fit(layout)?, layout.size()))
+        match self.allocate_first_fit(layout) {
+            Ok(ptr) => Ok((ptr, layout.size())),
+            Err(()) => Err(AllocErr),
+        }
     }
 
     unsafe fn dealloc(&mut self, ptr: NonNull<u8>, layout: Layout) {
