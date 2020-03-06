@@ -1,4 +1,4 @@
-use alloc::alloc::{AllocErr, Layout};
+use alloc::alloc::Layout;
 use core::mem::{align_of, size_of};
 use core::ptr::NonNull;
 
@@ -49,7 +49,7 @@ impl HoleList {
     /// block is returned.
     /// This function uses the “first fit” strategy, so it uses the first hole that is big
     /// enough. Thus the runtime is in O(n) but it should be reasonably fast for small allocations.
-    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<u8>, AllocErr> {
+    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<u8>, ()> {
         assert!(layout.size() >= Self::min_size());
 
         allocate_first_fit(&mut self.first, layout).map(|allocation| {
@@ -192,7 +192,7 @@ fn split_hole(hole: HoleInfo, required_layout: Layout) -> Option<Allocation> {
 /// care of freeing it again.
 /// This function uses the “first fit” strategy, so it breaks as soon as a big enough hole is
 /// found (and returns it).
-fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Result<Allocation, AllocErr> {
+fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Result<Allocation, ()> {
     loop {
         let allocation: Option<Allocation> = previous
             .next
@@ -210,7 +210,7 @@ fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Result<Allocat
             }
             None => {
                 // this was the last hole, so no hole is big enough -> allocation not possible
-                return Err(AllocErr);
+                return Err(());
             }
         }
     }
