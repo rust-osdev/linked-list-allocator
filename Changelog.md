@@ -1,3 +1,6 @@
+- AllocRef::alloc is now safe and allows zero-sized allocations ([#28](https://github.com/phil-opp/linked-list-allocator/pull/28))
+    - This is technically a **breaking change** for the unstable `alloc_ref` feature of this crate because it now requires a newer nightly version of Rust.
+
 # 0.8.0
 
 - **Breaking**: Make AllocRef implementation optional behind new `alloc_ref` feature
