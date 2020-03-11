@@ -1,5 +1,5 @@
 #![feature(const_fn)]
-#![cfg_attr(feature = "alloc_ref", feature(allocator_api))]
+#![cfg_attr(feature = "alloc_ref", feature(allocator_api, alloc_layout_extra))]
 #![no_std]
 
 #[cfg(test)]
@@ -133,7 +133,10 @@ impl Heap {
 
 #[cfg(feature = "alloc_ref")]
 unsafe impl AllocRef for Heap {
-    unsafe fn alloc(&mut self, layout: Layout) -> Result<(NonNull<u8>, usize), AllocErr> {
+    fn alloc(&mut self, layout: Layout) -> Result<(NonNull<u8>, usize), AllocErr> {
+        if layout.size() == 0 {
+            return Ok((layout.dangling(), 0));
+        }
         match self.allocate_first_fit(layout) {
             Ok(ptr) => Ok((ptr, layout.size())),
             Err(()) => Err(AllocErr),
@@ -141,7 +144,9 @@ unsafe impl AllocRef for Heap {
     }
 
     unsafe fn dealloc(&mut self, ptr: NonNull<u8>, layout: Layout) {
-        self.deallocate(ptr, layout)
+        if layout.size() != 0 {
+            self.deallocate(ptr, layout);
+        }
     }
 }
 
