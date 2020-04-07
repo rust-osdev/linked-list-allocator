@@ -1,3 +1,5 @@
+# 0.8.2
+
 - Update AllocRef implementation for latest API changes ([#30](https://github.com/phil-opp/linked-list-allocator/pull/30))
 
 # 0.8.1
