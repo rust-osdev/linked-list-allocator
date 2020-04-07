@@ -61,5 +61,5 @@ jobs:
     timeout-minutes: 2
     steps:
     - uses: actions/checkout@v1
-    - run: rustup install nightly -c rustfmt
+    - run: rustup toolchain install nightly --profile minimal --component rustfmt
     - run: cargo +nightly fmt -- --check
