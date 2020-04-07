@@ -1,3 +1,5 @@
+- Update AllocRef implementation for latest API changes ([#30](https://github.com/phil-opp/linked-list-allocator/pull/30))
+
 # 0.8.1
 
 - AllocRef::alloc is now safe and allows zero-sized allocations ([#28](https://github.com/phil-opp/linked-list-allocator/pull/28))
