@@ -61,10 +61,14 @@ impl Heap {
     /// anything else. This function is unsafe because it can cause undefined behavior if the
     /// given address is invalid.
     pub unsafe fn new(heap_bottom: usize, heap_size: usize) -> Heap {
-        Heap {
-            bottom: heap_bottom,
-            size: heap_size,
-            holes: HoleList::new(heap_bottom, heap_size),
+        if heap_size < HoleList::min_size() {
+            Self::empty()
+        } else {
+            Heap {
+                bottom: heap_bottom,
+                size: heap_size,
+                holes: HoleList::new(heap_bottom, heap_size),
+            }
         }
     }
 
