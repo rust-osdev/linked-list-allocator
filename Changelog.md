@@ -1,3 +1,5 @@
+# 0.8.3
+
 - Prevent writing to heap memory range when size too small ([#31](https://github.com/phil-opp/linked-list-allocator/pull/31))
 
 # 0.8.2
