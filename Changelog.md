@@ -1,3 +1,7 @@
+# 0.8.4
+
+- Add function to get used and free heap size ([#32](https://github.com/phil-opp/linked-list-allocator/pull/32))
+
 # 0.8.3
 
 - Prevent writing to heap memory range when size too small ([#31](https://github.com/phil-opp/linked-list-allocator/pull/31))
