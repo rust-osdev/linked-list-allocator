@@ -1,3 +1,4 @@
+# 0.8.4
 
 - Add function to get used and free heap size ([#32](https://github.com/phil-opp/linked-list-allocator/pull/32))
 
