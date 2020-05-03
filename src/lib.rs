@@ -14,6 +14,7 @@ extern crate alloc;
 use alloc::alloc::Layout;
 #[cfg(feature = "alloc_ref")]
 use alloc::alloc::{AllocErr, AllocInit, AllocRef, MemoryBlock};
+#[cfg(feature = "use_spin")]
 use core::alloc::GlobalAlloc;
 use core::mem;
 #[cfg(feature = "use_spin")]
@@ -31,6 +32,7 @@ mod test;
 pub struct Heap {
     bottom: usize,
     size: usize,
+    used: usize,
     holes: HoleList,
 }
 
@@ -40,6 +42,7 @@ impl Heap {
         Heap {
             bottom: 0,
             size: 0,
+            used: 0,
             holes: HoleList::empty(),
         }
     }
@@ -53,6 +56,7 @@ impl Heap {
     pub unsafe fn init(&mut self, heap_bottom: usize, heap_size: usize) {
         self.bottom = heap_bottom;
         self.size = heap_size;
+        self.used = 0;
         self.holes = HoleList::new(heap_bottom, heap_size);
     }
 
@@ -67,9 +71,21 @@ impl Heap {
             Heap {
                 bottom: heap_bottom,
                 size: heap_size,
+                used: 0,
                 holes: HoleList::new(heap_bottom, heap_size),
             }
         }
+    }
+
+    pub fn align_layout(&self, layout: Layout) -> Layout {
+        let mut size = layout.size();
+        if size < HoleList::min_size() {
+            size = HoleList::min_size();
+        }
+        let size = align_up(size, mem::align_of::<Hole>());
+        let layout = Layout::from_size_align(size, layout.align()).unwrap();
+
+        layout
     }
 
     /// Allocates a chunk of the given size with the given alignment. Returns a pointer to the
@@ -78,14 +94,12 @@ impl Heap {
     /// enough. The runtime is in O(n) where n is the number of free blocks, but it should be
     /// reasonably fast for small allocations.
     pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<u8>, ()> {
-        let mut size = layout.size();
-        if size < HoleList::min_size() {
-            size = HoleList::min_size();
+        let aligned_layout = self.align_layout(layout);
+        let res = self.holes.allocate_first_fit(aligned_layout);
+        if res.is_ok() {
+            self.used += aligned_layout.size();
         }
-        let size = align_up(size, mem::align_of::<Hole>());
-        let layout = Layout::from_size_align(size, layout.align()).unwrap();
-
-        self.holes.allocate_first_fit(layout)
+        res
     }
 
     /// Frees the given allocation. `ptr` must be a pointer returned
@@ -96,14 +110,9 @@ impl Heap {
     /// correct place. If the freed block is adjacent to another free block, the blocks are merged
     /// again. This operation is in `O(n)` since the list needs to be sorted by address.
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) {
-        let mut size = layout.size();
-        if size < HoleList::min_size() {
-            size = HoleList::min_size();
-        }
-        let size = align_up(size, mem::align_of::<Hole>());
-        let layout = Layout::from_size_align(size, layout.align()).unwrap();
-
-        self.holes.deallocate(ptr, layout);
+        let aligned_layout = self.align_layout(layout);
+        self.holes.deallocate(ptr, aligned_layout);
+        self.used -= aligned_layout.size();
     }
 
     /// Returns the bottom address of the heap.
@@ -119,6 +128,16 @@ impl Heap {
     /// Return the top address of the heap
     pub fn top(&self) -> usize {
         self.bottom + self.size
+    }
+
+    /// Returns the size of the used part of the heap
+    pub fn used(&self) -> usize {
+        self.used
+    }
+
+    /// Returns the size of the free part of the heap
+    pub fn free(&self) -> usize {
+        self.size - self.used
     }
 
     /// Extends the size of the heap by creating a new hole at the end
