@@ -77,7 +77,9 @@ impl Heap {
         }
     }
 
-    pub fn align_layout(&self, layout: Layout) -> Layout {
+    /// Align layout. Returns a layout with size increased to
+    /// fit at least `HoleList::min_size` and proper alignment of a `Hole`.
+    fn align_layout(layout: Layout) -> Layout {
         let mut size = layout.size();
         if size < HoleList::min_size() {
             size = HoleList::min_size();
@@ -94,7 +96,7 @@ impl Heap {
     /// enough. The runtime is in O(n) where n is the number of free blocks, but it should be
     /// reasonably fast for small allocations.
     pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<u8>, ()> {
-        let aligned_layout = self.align_layout(layout);
+        let aligned_layout = Self::align_layout(layout);
         let res = self.holes.allocate_first_fit(aligned_layout);
         if res.is_ok() {
             self.used += aligned_layout.size();
@@ -110,7 +112,7 @@ impl Heap {
     /// correct place. If the freed block is adjacent to another free block, the blocks are merged
     /// again. This operation is in `O(n)` since the list needs to be sorted by address.
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) {
-        let aligned_layout = self.align_layout(layout);
+        let aligned_layout = Self::align_layout(layout);
         self.holes.deallocate(ptr, aligned_layout);
         self.used -= aligned_layout.size();
     }
