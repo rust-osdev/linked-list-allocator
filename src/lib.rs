@@ -201,6 +201,7 @@ impl LockedHeap {
         LockedHeap(Spinlock::new(Heap {
             bottom: heap_bottom,
             size: heap_size,
+            used: 0,
             holes: HoleList::new(heap_bottom, heap_size),
         }))
     }
