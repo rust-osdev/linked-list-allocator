@@ -20,3 +20,10 @@ alloc_ref = []
 version = "0.1.0"
 features = ["nightly"]
 optional = true
+
+[package.metadata.release]
+no-dev-version = true
+pre-release-replacements = [
+    { file="Changelog.md", search="# Unreleased", replace="# Unreleased\n\n# {{version}} – {{date}}", exactly=1 },
+]
+pre-release-commit-message = "Release version {{version}}"
