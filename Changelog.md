@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.8.5 – 2020-08-13
+
 - Update AllocRef implementation for latest API changes ([#33](https://github.com/phil-opp/linked-list-allocator/pull/33))
 
 # 0.8.4
