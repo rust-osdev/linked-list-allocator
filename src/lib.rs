@@ -1,4 +1,4 @@
-#![feature(const_fn)]
+#![feature(const_mut_refs)]
 #![cfg_attr(
     feature = "alloc_ref",
     feature(allocator_api, alloc_layout_extra, nonnull_slice_from_raw_parts)
