@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.8.6 – 2020-09-24
+
 - Fix build error on latest nightly ([#35](https://github.com/phil-opp/linked-list-allocator/pull/35))
 
 # 0.8.5 – 2020-08-13
