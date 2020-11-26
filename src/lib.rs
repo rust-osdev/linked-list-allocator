@@ -157,6 +157,19 @@ impl Heap {
             .deallocate(NonNull::new_unchecked(top as *mut u8), layout);
         self.size += by;
     }
+
+    /// Extends the `Heap`s managed area with a non contiguous region.
+    ///
+    /// The use of this method invalidates the value returned by `Heap::top(&self)`
+    ///
+    /// # Unsafety
+    /// The given region must be valid and free from other uses
+    pub unsafe fn extend_with_region(&mut self, start_addr: usize, size: usize) {
+        let layout = Layout::from_size_align(size, 1).unwrap();
+        self.holes
+            .deallocate(NonNull::new(start_addr as *mut u8).unwrap(), layout);
+        self.size += size;
+    }
 }
 
 #[cfg(feature = "alloc_ref")]
