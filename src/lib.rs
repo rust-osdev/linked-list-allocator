@@ -36,6 +36,7 @@ pub struct Heap {
     bottom: usize,
     size: usize,
     used: usize,
+    contiguous: bool,
     holes: HoleList,
 }
 
@@ -46,6 +47,7 @@ impl Heap {
             bottom: 0,
             size: 0,
             used: 0,
+            contiguous: false,
             holes: HoleList::empty(),
         }
     }
@@ -60,6 +62,7 @@ impl Heap {
         self.bottom = heap_bottom;
         self.size = heap_size;
         self.used = 0;
+        self.contiguous = true;
         self.holes = HoleList::new(heap_bottom, heap_size);
     }
 
@@ -75,6 +78,7 @@ impl Heap {
                 bottom: heap_bottom,
                 size: heap_size,
                 used: 0,
+                contiguous: true,
                 holes: HoleList::new(heap_bottom, heap_size),
             }
         }
@@ -120,9 +124,14 @@ impl Heap {
         self.used -= aligned_layout.size();
     }
 
-    /// Returns the bottom address of the heap.
-    pub fn bottom(&self) -> usize {
-        self.bottom
+    /// Returns the bottom address of the heap only if it manages
+    /// contiguous regions
+    pub fn bottom(&self) -> Option<usize> {
+        if self.is_contiguous() {
+            Some(self.bottom)
+        } else {
+            None
+        }
     }
 
     /// Returns the size of the heap.
@@ -130,9 +139,14 @@ impl Heap {
         self.size
     }
 
-    /// Return the top address of the heap
-    pub fn top(&self) -> usize {
-        self.bottom + self.size
+    /// Return the top address of the heap  only if it manages
+    /// contiguous regions
+    pub fn top(&self) -> Option<usize> {
+        if self.is_contiguous() {
+            Some(self.bottom + self.size)
+        } else {
+            None
+        }
     }
 
     /// Returns the size of the used part of the heap
@@ -140,18 +154,24 @@ impl Heap {
         self.used
     }
 
+    /// Returns whether the heap manages contiguous memory
+    pub fn is_contiguous(&self) -> bool {
+        self.contiguous
+    }
+
     /// Returns the size of the free part of the heap
     pub fn free(&self) -> usize {
         self.size - self.used
     }
 
-    /// Extends the size of the heap by creating a new hole at the end
+    /// Extends the size of the heap by creating a new hole at the end.
+    /// The operation is executed only if `self.is_contiguous()` returns `true`
     ///
     /// # Unsafety
     ///
     /// The new extended area must be valid
     pub unsafe fn extend(&mut self, by: usize) {
-        let top = self.top();
+        let top = self.top().unwrap();
         let layout = Layout::from_size_align(by, 1).unwrap();
         self.holes
             .deallocate(NonNull::new_unchecked(top as *mut u8), layout);
@@ -160,7 +180,9 @@ impl Heap {
 
     /// Extends the `Heap`s managed area with a non contiguous region.
     ///
-    /// The use of this method invalidates the value returned by `Heap::top(&self)`
+    /// The use of this method invalidates the value returned by
+    /// `Heap::top(&self)`, consequently is highly recommended to not
+    /// use `Heap::extend()` after the use of this method
     ///
     /// # Unsafety
     /// The given region must be valid and free from other uses
@@ -169,6 +191,11 @@ impl Heap {
         self.holes
             .deallocate(NonNull::new(start_addr as *mut u8).unwrap(), layout);
         self.size += size;
+
+        // check whether the given region is not really contiguous
+        if self.is_contiguous() && start_addr != self.top().unwrap() {
+            self.contiguous = false;
+        }
     }
 }
 
@@ -210,6 +237,7 @@ impl LockedHeap {
             bottom: heap_bottom,
             size: heap_size,
             used: 0,
+            contiguous: true,
             holes: HoleList::new(heap_bottom, heap_size),
         }))
     }
