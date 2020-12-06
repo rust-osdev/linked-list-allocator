@@ -29,15 +29,6 @@ jobs:
     - name: "Checkout Repository"
       uses: actions/checkout@v1
 
-    - name: Install Rustup
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
-        echo ::add-path::$HOME/.cargo/bin
-      if: runner.os == 'macOS'
-
-    - name: Set Rustup profile to minimal
-      run: rustup set profile minimal
-
     - name: "Print Rust Version"
       run: |
         rustc -Vv
