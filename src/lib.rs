@@ -16,7 +16,7 @@ extern crate alloc;
 
 use alloc::alloc::Layout;
 #[cfg(feature = "alloc_ref")]
-use alloc::alloc::{AllocErr, AllocRef};
+use alloc::alloc::{AllocError, Allocator};
 #[cfg(feature = "use_spin")]
 use core::alloc::GlobalAlloc;
 use core::mem;
@@ -160,20 +160,21 @@ impl Heap {
 }
 
 #[cfg(feature = "alloc_ref")]
-unsafe impl AllocRef for Heap {
-    fn alloc(&mut self, layout: Layout) -> Result<NonNull<[u8]>, AllocErr> {
+#[cfg(feature = "use_spin")]
+unsafe impl Allocator for LockedHeap {
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         if layout.size() == 0 {
             return Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0));
         }
-        match self.allocate_first_fit(layout) {
+        match self.0.lock().allocate_first_fit(layout) {
             Ok(ptr) => Ok(NonNull::slice_from_raw_parts(ptr, layout.size())),
-            Err(()) => Err(AllocErr),
+            Err(()) => Err(AllocError),
         }
     }
 
-    unsafe fn dealloc(&mut self, ptr: NonNull<u8>, layout: Layout) {
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
         if layout.size() != 0 {
-            self.deallocate(ptr, layout);
+            self.0.lock().deallocate(ptr, layout);
         }
     }
 }
