@@ -1,6 +1,9 @@
 # Unreleased
 
 - _Unstable Breakage:_ fix(alloc_ref): Use new nightly Allocator trait [#42](https://github.com/phil-opp/linked-list-allocator/pull/42)
+- Build on stable without features [#43](https://github.com/phil-opp/linked-list-allocator/pull/43)
+  - Adds a new `const_mut_refs` crate feature (enabled by default).
+  - By disabling this feature, it's possible to build the crate on stable Rust.
 
 # 0.8.6 – 2020-09-24
 
