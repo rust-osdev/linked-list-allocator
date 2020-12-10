@@ -1,5 +1,7 @@
 # Unreleased
 
+- _Unstable Breakage:_ fix(alloc_ref): Use new nightly Allocator trait [#42](https://github.com/phil-opp/linked-list-allocator/pull/42)
+
 # 0.8.6 – 2020-09-24
 
 - Fix build error on latest nightly ([#35](https://github.com/phil-opp/linked-list-allocator/pull/35))
