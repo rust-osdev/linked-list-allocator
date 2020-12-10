@@ -11,6 +11,18 @@ pub struct HoleList {
 
 impl HoleList {
     /// Creates an empty `HoleList`.
+    #[cfg(not(feature = "const_mut_refs"))]
+    pub fn empty() -> HoleList {
+        HoleList {
+            first: Hole {
+                size: 0,
+                next: None,
+            },
+        }
+    }
+
+    /// Creates an empty `HoleList`.
+    #[cfg(feature = "const_mut_refs")]
     pub const fn empty() -> HoleList {
         HoleList {
             first: Hole {
@@ -26,7 +38,7 @@ impl HoleList {
     ///
     /// The pointer to `hole_addr` is automatically aligned.
     pub unsafe fn new(hole_addr: usize, hole_size: usize) -> HoleList {
-        assert!(size_of::<Hole>() == Self::min_size());
+        assert_eq!(size_of::<Hole>(), Self::min_size());
 
         let aligned_hole_addr = align_up(hole_addr, align_of::<Hole>());
         let ptr = aligned_hole_addr as *mut Hole;

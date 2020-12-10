@@ -43,6 +43,35 @@ jobs:
     - name: 'Deny Warnings'
       run: cargo rustc -- -D warnings
 
+  test-stable:
+    name: "Test stable without features"
+
+    strategy:
+      matrix:
+        platform: [
+            ubuntu-latest,
+            macos-latest,
+            windows-latest
+        ]
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 15
+
+    steps:
+      - name: "Checkout Repository"
+        uses: actions/checkout@v1
+
+      - name: "Print Rust Version"
+        run: |
+          rustc -Vv
+          cargo -Vv
+
+      - name: "Build without feature on stable"
+        run: cargo +stable build --no-default-features
+
+      - name: "Run cargo test without features on stable"
+        run: cargo +stable test --no-default-features
+
   test-unstable:
     name: "Test unstable features"
 
