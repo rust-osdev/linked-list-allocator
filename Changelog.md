@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.8.8 – 2020-12-16
+
 - Do not require alloc crate ([#44](https://github.com/phil-opp/linked-list-allocator/pull/44))
 
 # 0.8.7 – 2020-12-10
