@@ -1,4 +1,4 @@
-use alloc::alloc::Layout;
+use core::alloc::Layout;
 use core::mem::{align_of, size_of};
 use core::ptr::NonNull;
 

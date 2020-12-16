@@ -12,13 +12,11 @@ extern crate std;
 #[cfg(feature = "use_spin")]
 extern crate spinning_top;
 
-extern crate alloc;
-
-use alloc::alloc::Layout;
-#[cfg(feature = "alloc_ref")]
-use alloc::alloc::{AllocError, Allocator};
 #[cfg(feature = "use_spin")]
 use core::alloc::GlobalAlloc;
+use core::alloc::Layout;
+#[cfg(feature = "alloc_ref")]
+use core::alloc::{AllocError, Allocator};
 use core::mem;
 #[cfg(feature = "use_spin")]
 use core::ops::Deref;
