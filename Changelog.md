@@ -1,5 +1,7 @@
 # Unreleased
 
+- Do not require alloc crate ([#44](https://github.com/phil-opp/linked-list-allocator/pull/44))
+
 # 0.8.7 – 2020-12-10
 
 - _Unstable Breakage:_ fix(alloc_ref): Use new nightly Allocator trait [#42](https://github.com/phil-opp/linked-list-allocator/pull/42)
