@@ -194,7 +194,14 @@ pub struct LockedHeap(Spinlock<Heap>);
 #[cfg(feature = "use_spin")]
 impl LockedHeap {
     /// Creates an empty heap. All allocate calls will return `None`.
+    #[cfg(feature = "const_mut_refs")]
     pub const fn empty() -> LockedHeap {
+        LockedHeap(Spinlock::new(Heap::empty()))
+    }
+
+    /// Creates an empty heap. All allocate calls will return `None`.
+    #[cfg(not(feature = "const_mut_refs"))]
+    pub fn empty() -> LockedHeap {
         LockedHeap(Spinlock::new(Heap::empty()))
     }
 
