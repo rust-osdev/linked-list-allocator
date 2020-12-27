@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.8.9 – 2020-12-27
+
 - Don't require nightly for `use_spin` feature ([#46](https://github.com/phil-opp/linked-list-allocator/pull/46))
 
 # 0.8.8 – 2020-12-16
