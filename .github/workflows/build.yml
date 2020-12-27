@@ -72,6 +72,12 @@ jobs:
       - name: "Run cargo test without features on stable"
         run: cargo +stable test --no-default-features
 
+      - name: "Build with `use_spin` feature on stable"
+        run: cargo +stable build --no-default-features --features use_spin
+
+      - name: "Run cargo test with `use_spin` feature on stable"
+        run: cargo +stable test --no-default-features --features use_spin
+
   test-unstable:
     name: "Test unstable features"
 
