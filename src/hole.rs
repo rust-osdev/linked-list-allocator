@@ -33,9 +33,13 @@ impl HoleList {
         }
     }
 
-    /// Creates a `HoleList` that contains the given hole. This function is unsafe because it
+    /// Creates a `HoleList` that contains the given hole.
+    ///
+    /// ## Safety
+    ///
+    /// This function is unsafe because it
     /// creates a hole at the given `hole_addr`. This can cause undefined behavior if this address
-    /// is invalid or if memory from the `[hole_addr, hole_addr+size) range is used somewhere else.
+    /// is invalid or if memory from the `[hole_addr, hole_addr+size)` range is used somewhere else.
     ///
     /// The pointer to `hole_addr` is automatically aligned.
     pub unsafe fn new(hole_addr: usize, hole_size: usize) -> HoleList {
@@ -56,8 +60,14 @@ impl HoleList {
         }
     }
 
-    /// Align layout. Returns a layout with size increased to
-    /// fit at least `HoleList::min_size` and proper alignment of a `Hole`.
+    /// Aligns the given layout for use with `HoleList`.
+    ///
+    /// Returns a layout with size increased to fit at least `HoleList::min_size` and proper
+    /// alignment of a `Hole`.
+    ///
+    /// The [`allocate_first_fit`][HoleList::allocate_first_fit] and
+    /// [`deallocate`][HoleList::deallocate] methods perform the required alignment
+    /// themselves, so calling this function manually is not necessary.
     pub fn align_layout(layout: Layout) -> Layout {
         let mut size = layout.size();
         if size < Self::min_size() {
@@ -69,11 +79,14 @@ impl HoleList {
         layout
     }
 
-    /// Searches the list for a big enough hole. A hole is big enough if it can hold an allocation
-    /// of `layout.size()` bytes with the given `layout.align()`. If such a hole is found in the
-    /// list, a block of the required size is allocated from it. Then the start address of that
+    /// Searches the list for a big enough hole.
+    ///
+    /// A hole is big enough if it can hold an allocation of `layout.size()` bytes with
+    /// the given `layout.align()`. If such a hole is found in the list, a block of the
+    /// required size is allocated from it. Then the start address of that
     /// block and the aligned layout are returned. The automatic layout alignment is required
-    /// because the HoleList has some additional layout requirements for each memory block.
+    /// because the `HoleList` has some additional layout requirements for each memory block.
+    ///
     /// This function uses the “first fit” strategy, so it uses the first hole that is big
     /// enough. Thus the runtime is in O(n) but it should be reasonably fast for small allocations.
     pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<(NonNull<u8>, Layout), ()> {
@@ -94,16 +107,18 @@ impl HoleList {
         })
     }
 
-    /// Frees the allocation given by `ptr` and `layout`. `ptr` must be a pointer returned by a call
-    /// to the `allocate_first_fit` function with identical layout. Undefined behavior may occur for
-    /// invalid arguments.
-    /// The function performs exactly the same layout adjustments as [allocate_first_fit] and
+    /// Frees the allocation given by `ptr` and `layout`.
+    ///
+    /// `ptr` must be a pointer returned by a call to the [`allocate_first_fit`] function with
+    /// identical layout. Undefined behavior may occur for invalid arguments.
+    /// The function performs exactly the same layout adjustments as [`allocate_first_fit`] and
     /// returns the aligned layout.
+    ///
     /// This function walks the list and inserts the given block at the correct place. If the freed
     /// block is adjacent to another free block, the blocks are merged again.
     /// This operation is in `O(n)` since the list needs to be sorted by address.
     ///
-    /// [allocate_first_fit]: ./struct.HoleList.html#method.allocate_first_fit
+    /// [`allocate_first_fit`]: HoleList::allocate_first_fit
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) -> Layout {
         let aligned_layout = Self::align_layout(layout);
         deallocate(
