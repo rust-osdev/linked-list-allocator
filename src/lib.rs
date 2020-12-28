@@ -100,7 +100,7 @@ impl Heap {
             Ok((ptr, aligned_layout)) => {
                 self.used += aligned_layout.size();
                 Ok(ptr)
-            },
+            }
             Err(err) => Err(err),
         }
     }
