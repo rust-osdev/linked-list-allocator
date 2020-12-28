@@ -1,4 +1,5 @@
 use core::alloc::Layout;
+use core::mem;
 use core::mem::{align_of, size_of};
 use core::ptr::NonNull;
 
@@ -55,34 +56,62 @@ impl HoleList {
         }
     }
 
+    /// Align layout. Returns a layout with size increased to
+    /// fit at least `HoleList::min_size` and proper alignment of a `Hole`.
+    pub fn align_layout(layout: Layout) -> Layout {
+        let mut size = layout.size();
+        if size < Self::min_size() {
+            size = Self::min_size();
+        }
+        let size = align_up(size, mem::align_of::<Hole>());
+        let layout = Layout::from_size_align(size, layout.align()).unwrap();
+
+        layout
+    }
+
     /// Searches the list for a big enough hole. A hole is big enough if it can hold an allocation
     /// of `layout.size()` bytes with the given `layout.align()`. If such a hole is found in the
     /// list, a block of the required size is allocated from it. Then the start address of that
-    /// block is returned.
+    /// block and the aligned layout are returned. The automatic layout alignment is required
+    /// because the HoleList has some additional layout requirements for each memory block.
     /// This function uses the “first fit” strategy, so it uses the first hole that is big
     /// enough. Thus the runtime is in O(n) but it should be reasonably fast for small allocations.
-    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<u8>, ()> {
-        assert!(layout.size() >= Self::min_size());
+    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<(NonNull<u8>, Layout), ()> {
+        let aligned_layout = Self::align_layout(layout);
 
-        allocate_first_fit(&mut self.first, layout).map(|allocation| {
+        allocate_first_fit(&mut self.first, aligned_layout).map(|allocation| {
             if let Some(padding) = allocation.front_padding {
                 deallocate(&mut self.first, padding.addr, padding.size);
             }
             if let Some(padding) = allocation.back_padding {
                 deallocate(&mut self.first, padding.addr, padding.size);
             }
-            NonNull::new(allocation.info.addr as *mut u8).unwrap()
+
+            (
+                NonNull::new(allocation.info.addr as *mut u8).unwrap(),
+                aligned_layout,
+            )
         })
     }
 
     /// Frees the allocation given by `ptr` and `layout`. `ptr` must be a pointer returned by a call
     /// to the `allocate_first_fit` function with identical layout. Undefined behavior may occur for
     /// invalid arguments.
+    /// The function performs exactly the same layout adjustments as [allocate_first_fit] and
+    /// returns the aligned layout.
     /// This function walks the list and inserts the given block at the correct place. If the freed
     /// block is adjacent to another free block, the blocks are merged again.
     /// This operation is in `O(n)` since the list needs to be sorted by address.
-    pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) {
-        deallocate(&mut self.first, ptr.as_ptr() as usize, layout.size())
+    ///
+    /// [allocate_first_fit]: ./struct.HoleList.html#method.allocate_first_fit
+    pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) -> Layout {
+        let aligned_layout = Self::align_layout(layout);
+        deallocate(
+            &mut self.first,
+            ptr.as_ptr() as usize,
+            aligned_layout.size(),
+        );
+        aligned_layout
     }
 
     /// Returns the minimal allocation size. Smaller allocations or deallocations are not allowed.

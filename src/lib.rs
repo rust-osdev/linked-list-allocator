@@ -17,15 +17,16 @@ use core::alloc::GlobalAlloc;
 use core::alloc::Layout;
 #[cfg(feature = "alloc_ref")]
 use core::alloc::{AllocError, Allocator};
-use core::mem;
 #[cfg(feature = "use_spin")]
 use core::ops::Deref;
 use core::ptr::NonNull;
-use hole::{Hole, HoleList};
+#[cfg(test)]
+use hole::Hole;
+use hole::HoleList;
 #[cfg(feature = "use_spin")]
 use spinning_top::Spinlock;
 
-mod hole;
+pub mod hole;
 #[cfg(test)]
 mod test;
 
@@ -89,31 +90,19 @@ impl Heap {
         }
     }
 
-    /// Align layout. Returns a layout with size increased to
-    /// fit at least `HoleList::min_size` and proper alignment of a `Hole`.
-    fn align_layout(layout: Layout) -> Layout {
-        let mut size = layout.size();
-        if size < HoleList::min_size() {
-            size = HoleList::min_size();
-        }
-        let size = align_up(size, mem::align_of::<Hole>());
-        let layout = Layout::from_size_align(size, layout.align()).unwrap();
-
-        layout
-    }
-
     /// Allocates a chunk of the given size with the given alignment. Returns a pointer to the
     /// beginning of that chunk if it was successful. Else it returns `None`.
     /// This function scans the list of free memory blocks and uses the first block that is big
     /// enough. The runtime is in O(n) where n is the number of free blocks, but it should be
     /// reasonably fast for small allocations.
     pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<u8>, ()> {
-        let aligned_layout = Self::align_layout(layout);
-        let res = self.holes.allocate_first_fit(aligned_layout);
-        if res.is_ok() {
-            self.used += aligned_layout.size();
+        match self.holes.allocate_first_fit(layout) {
+            Ok((ptr, aligned_layout)) => {
+                self.used += aligned_layout.size();
+                Ok(ptr)
+            }
+            Err(err) => Err(err),
         }
-        res
     }
 
     /// Frees the given allocation. `ptr` must be a pointer returned
@@ -124,9 +113,7 @@ impl Heap {
     /// correct place. If the freed block is adjacent to another free block, the blocks are merged
     /// again. This operation is in `O(n)` since the list needs to be sorted by address.
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) {
-        let aligned_layout = Self::align_layout(layout);
-        self.holes.deallocate(ptr, aligned_layout);
-        self.used -= aligned_layout.size();
+        self.used -= self.holes.deallocate(ptr, layout).size();
     }
 
     /// Returns the bottom address of the heap.
