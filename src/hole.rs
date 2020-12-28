@@ -88,7 +88,7 @@ impl HoleList {
 
             (
                 NonNull::new(allocation.info.addr as *mut u8).unwrap(),
-                aligned_layout
+                aligned_layout,
             )
         })
     }
@@ -104,7 +104,7 @@ impl HoleList {
         deallocate(
             &mut self.first,
             ptr.as_ptr() as usize,
-            aligned_layout.size()
+            aligned_layout.size(),
         );
         aligned_layout
     }
