@@ -3,6 +3,7 @@ use core::mem::{align_of, size_of};
 use core::ptr::NonNull;
 
 use super::align_up;
+use core::mem;
 
 /// A sorted list of holes. It uses the the holes itself to store its nodes.
 pub struct HoleList {
@@ -53,6 +54,20 @@ impl HoleList {
                 next: Some(&mut *ptr),
             },
         }
+    }
+
+
+    /// Align layout. Returns a layout with size increased to
+    /// fit at least `HoleList::min_size` and proper alignment of a `Hole`.
+    pub fn align_layout(layout: Layout) -> Layout {
+        let mut size = layout.size();
+        if size < Self::min_size() {
+            size = Self::min_size();
+        }
+        let size = align_up(size, mem::align_of::<Hole>());
+        let layout = Layout::from_size_align(size, layout.align()).unwrap();
+
+        layout
     }
 
     /// Searches the list for a big enough hole. A hole is big enough if it can hold an allocation
