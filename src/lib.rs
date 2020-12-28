@@ -20,7 +20,7 @@ use core::alloc::{AllocError, Allocator};
 #[cfg(feature = "use_spin")]
 use core::ops::Deref;
 use core::ptr::NonNull;
-use hole::HoleList;
+use hole::{Hole, HoleList};
 #[cfg(feature = "use_spin")]
 use spinning_top::Spinlock;
 
