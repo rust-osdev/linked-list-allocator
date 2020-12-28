@@ -1,8 +1,8 @@
 use core::alloc::Layout;
 use core::mem;
 use core::mem::{align_of, size_of};
-
 use core::ptr::NonNull;
+
 use super::align_up;
 
 /// A sorted list of holes. It uses the the holes itself to store its nodes.
@@ -322,7 +322,9 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
                 // write the new hole to the freed memory
                 debug_assert_eq!(addr % align_of::<Hole>(), 0);
                 let ptr = addr as *mut Hole;
-                unsafe { ptr.write(new_hole) };
+                unsafe {
+                    ptr.write(new_hole)
+                };
                 // add the F block as the next block of the X block
                 hole.next = Some(unsafe { &mut *ptr });
             }
