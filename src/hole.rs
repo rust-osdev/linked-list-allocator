@@ -85,7 +85,11 @@ impl HoleList {
             if let Some(padding) = allocation.back_padding {
                 deallocate(&mut self.first, padding.addr, padding.size);
             }
-            (NonNull::new(allocation.info.addr as *mut u8).unwrap(), aligned_layout)
+
+            (
+                NonNull::new(allocation.info.addr as *mut u8).unwrap(),
+                aligned_layout
+            )
         })
     }
 
@@ -97,7 +101,11 @@ impl HoleList {
     /// This operation is in `O(n)` since the list needs to be sorted by address.
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) -> Layout {
         let aligned_layout = Self::align_layout(layout);
-        deallocate(&mut self.first, ptr.as_ptr() as usize, aligned_layout.size());
+        deallocate(
+            &mut self.first,
+            ptr.as_ptr() as usize,
+            aligned_layout.size()
+        );
         aligned_layout
     }
 
