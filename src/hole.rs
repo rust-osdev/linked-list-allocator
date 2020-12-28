@@ -1,9 +1,9 @@
 use core::alloc::Layout;
-use core::mem::{align_of, size_of};
-use core::ptr::NonNull;
-
-use super::align_up;
 use core::mem;
+use core::mem::{align_of, size_of};
+
+use core::ptr::NonNull;
+use super::align_up;
 
 /// A sorted list of holes. It uses the the holes itself to store its nodes.
 pub struct HoleList {
