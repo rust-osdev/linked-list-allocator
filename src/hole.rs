@@ -56,7 +56,6 @@ impl HoleList {
         }
     }
 
-
     /// Align layout. Returns a layout with size increased to
     /// fit at least `HoleList::min_size` and proper alignment of a `Hole`.
     pub fn align_layout(layout: Layout) -> Layout {
@@ -322,9 +321,7 @@ fn deallocate(mut hole: &mut Hole, addr: usize, mut size: usize) {
                 // write the new hole to the freed memory
                 debug_assert_eq!(addr % align_of::<Hole>(), 0);
                 let ptr = addr as *mut Hole;
-                unsafe {
-                    ptr.write(new_hole)
-                };
+                unsafe { ptr.write(new_hole) };
                 // add the F block as the next block of the X block
                 hole.next = Some(unsafe { &mut *ptr });
             }
