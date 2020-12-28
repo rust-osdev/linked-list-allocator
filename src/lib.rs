@@ -96,11 +96,13 @@ impl Heap {
     /// enough. The runtime is in O(n) where n is the number of free blocks, but it should be
     /// reasonably fast for small allocations.
     pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<u8>, ()> {
-        let res = self.holes.allocate_first_fit(layout);
-        if res.is_ok() {
-            self.used += res.unwrap().1.size();
+        match self.holes.allocate_first_fit(layout) {
+            Ok((ptr, aligned_layout)) => {
+                self.used += aligned_layout.size();
+                Ok(ptr)
+            },
+            Err(err) => Err(err),
         }
-        res.map(|tuple| tuple.0)
     }
 
     /// Frees the given allocation. `ptr` must be a pointer returned
