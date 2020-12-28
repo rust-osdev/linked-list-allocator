@@ -75,17 +75,17 @@ impl HoleList {
     /// block is returned.
     /// This function uses the “first fit” strategy, so it uses the first hole that is big
     /// enough. Thus the runtime is in O(n) but it should be reasonably fast for small allocations.
-    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<u8>, ()> {
-        assert!(layout.size() >= Self::min_size());
+    pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<(NonNull<u8>, Layout), ()> {
+        let aligned_layout = Self::align_layout(layout);
 
-        allocate_first_fit(&mut self.first, layout).map(|allocation| {
+        allocate_first_fit(&mut self.first, aligned_layout).map(|allocation| {
             if let Some(padding) = allocation.front_padding {
                 deallocate(&mut self.first, padding.addr, padding.size);
             }
             if let Some(padding) = allocation.back_padding {
                 deallocate(&mut self.first, padding.addr, padding.size);
             }
-            NonNull::new(allocation.info.addr as *mut u8).unwrap()
+            (NonNull::new(allocation.info.addr as *mut u8).unwrap(), aligned_layout)
         })
     }
 
@@ -95,8 +95,10 @@ impl HoleList {
     /// This function walks the list and inserts the given block at the correct place. If the freed
     /// block is adjacent to another free block, the blocks are merged again.
     /// This operation is in `O(n)` since the list needs to be sorted by address.
-    pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) {
-        deallocate(&mut self.first, ptr.as_ptr() as usize, layout.size())
+    pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) -> Layout {
+        let aligned_layout = Self::align_layout(layout);
+        deallocate(&mut self.first, ptr.as_ptr() as usize, aligned_layout.size());
+        aligned_layout
     }
 
     /// Returns the minimal allocation size. Smaller allocations or deallocations are not allowed.
