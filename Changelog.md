@@ -1,5 +1,7 @@
 # Unreleased
 
+- Made hole module public for external uses ([#47](https://github.com/phil-opp/linked-list-allocator/pull/47))
+
 # 0.8.9 – 2020-12-27
 
 - Don't require nightly for `use_spin` feature ([#46](https://github.com/phil-opp/linked-list-allocator/pull/46))
