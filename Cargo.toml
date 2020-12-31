@@ -12,10 +12,11 @@ documentation = "https://docs.rs/crate/linked_list_allocator"
 homepage = "http://os.phil-opp.com/kernel-heap.html#a-better-allocator"
 
 [features]
-default = ["use_spin", "const_mut_refs"]
+default = ["use_spin_nightly"]
 use_spin = ["spinning_top"]
+use_spin_nightly = ["use_spin", "spinning_top/nightly", "const_mut_refs"]
 alloc_ref = []
-const_mut_refs = ["spinning_top/nightly"]
+const_mut_refs = []
 
 [dependencies.spinning_top]
 version = "0.1.0"

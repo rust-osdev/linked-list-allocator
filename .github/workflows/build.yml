@@ -107,6 +107,9 @@ jobs:
     - name: "Run cargo test with `alloc_ref` feature"
       run: cargo test
 
+    - name: "Run cargo test with `use_spin_nightly` feature"
+      run: cargo test --features use_spin_nightly
+
   check_formatting:
     name: "Check Formatting"
     runs-on: ubuntu-latest

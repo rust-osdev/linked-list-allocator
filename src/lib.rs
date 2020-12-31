@@ -155,8 +155,7 @@ impl Heap {
     }
 }
 
-#[cfg(feature = "alloc_ref")]
-#[cfg(feature = "use_spin")]
+#[cfg(all(feature = "alloc_ref", feature = "use_spin"))]
 unsafe impl Allocator for LockedHeap {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         if layout.size() == 0 {
@@ -181,13 +180,13 @@ pub struct LockedHeap(Spinlock<Heap>);
 #[cfg(feature = "use_spin")]
 impl LockedHeap {
     /// Creates an empty heap. All allocate calls will return `None`.
-    #[cfg(feature = "const_mut_refs")]
+    #[cfg(feature = "use_spin_nightly")]
     pub const fn empty() -> LockedHeap {
         LockedHeap(Spinlock::new(Heap::empty()))
     }
 
     /// Creates an empty heap. All allocate calls will return `None`.
-    #[cfg(not(feature = "const_mut_refs"))]
+    #[cfg(not(feature = "use_spin_nightly"))]
     pub fn empty() -> LockedHeap {
         LockedHeap(Spinlock::new(Heap::empty()))
     }

@@ -32,6 +32,7 @@ pub fn init_heap() {
 
 - **`use_spin`** (default): Provide a `LockedHeap` type that implements the [`GlobalAlloc`] trait by using a spinlock.
 - **`const_mut_refs`** (default): Makes the `Heap::empty` function `const`; requires nightly Rust.
+- **`use_spin_nightly`** (default): Makes the `LockedHeap::empty` function `const`, automatically enables `use_spin` and `const_mut_refs`; requires nightly Rust.
 - **`alloc_ref`**: Provide an implementation of the unstable [`AllocRef`] trait; requires nightly Rust.
     - Warning: The `AllocRef` trait is still regularly changed on the Rust side, so expect some regular breakage when using this feature.
 
