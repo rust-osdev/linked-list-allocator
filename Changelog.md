@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.8.11 – 2021-01-02
+
 - Add new `use_spin_nightly` feature, which, together with `const_mut_refs`, makes the `empty` method of `LockedHeap` const ([#49](https://github.com/phil-opp/linked-list-allocator/pull/49))
 
 # 0.8.10 – 2020-12-28
