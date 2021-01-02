@@ -105,7 +105,7 @@ jobs:
       run: cargo build --features alloc_ref
 
     - name: "Run cargo test with `alloc_ref` feature"
-      run: cargo test
+      run: cargo test --features alloc_ref
 
     - name: "Run cargo test with `use_spin_nightly` feature"
       run: cargo test --features use_spin_nightly
