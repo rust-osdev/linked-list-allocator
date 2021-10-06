@@ -17,6 +17,7 @@ use core::alloc::GlobalAlloc;
 use core::alloc::Layout;
 #[cfg(feature = "alloc_ref")]
 use core::alloc::{AllocError, Allocator};
+use core::mem::MaybeUninit;
 #[cfg(feature = "use_spin")]
 use core::ops::Deref;
 use core::ptr::NonNull;
@@ -89,9 +90,9 @@ impl Heap {
     /// This method panics if the heap is already initialized.
     pub fn init_from_slice(&mut self, mem: &'static mut [MaybeUninit<u8>]) {
         assert!(self.bottom == 0, "The heap has already been initialized.");
-        let size = mem.size();
+        let size = mem.len();
         let address = mem.as_ptr() as usize;
-        // Safety: All initialization requires the bottom address to be valid, which implies it
+        // SAFETY: All initialization requires the bottom address to be valid, which implies it
         // must not be 0. Initially the address is 0. The assertion above ensures that no
         // initialization had been called before.
         // The given address and size is valid according to the safety invariants of the mutable
@@ -114,6 +115,15 @@ impl Heap {
                 holes: HoleList::new(heap_bottom, heap_size),
             }
         }
+    }
+
+    /// Crates a new heap from a slice of raw memory.
+    pub fn with_memory(mem: &'static mut [MaybeUninit<u8>]) -> Heap {
+        let size = mem.len();
+        let address = mem.as_ptr() as usize;
+        // SAFETY: The given address and size is valid according to the safety invariants of the
+        // mutable reference handed to us by the caller.
+        unsafe { Self::new(address, size) }
     }
 
     /// Allocates a chunk of the given size with the given alignment. Returns a pointer to the
