@@ -73,6 +73,32 @@ impl Heap {
         self.holes = HoleList::new(heap_bottom, heap_size);
     }
 
+    /// Initialize an empty heap with provided memory.
+    ///
+    /// The caller is responsible for procuring a region of raw memory that may be utilized by the
+    /// allocator. This might be done via any method such as (unsafely) taking a region from the
+    /// program's memory, from a mutable static, or by allocating and leaking such memory from
+    /// another allocator.
+    ///
+    /// The latter method may be especially useful if the underlying allocator does not perform
+    /// deallocation (e.g. a simple bump allocator). Then the overlaid linked-list-allocator can
+    /// provide memory reclamation.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the heap is already initialized.
+    pub fn init_from_slice(&mut self, mem: &'static mut [MaybeUninit<u8>]) {
+        assert!(self.bottom == 0, "The heap has already been initialized.");
+        let size = mem.size();
+        let address = mem.as_ptr() as usize;
+        // Safety: All initialization requires the bottom address to be valid, which implies it
+        // must not be 0. Initially the address is 0. The assertion above ensures that no
+        // initialization had been called before.
+        // The given address and size is valid according to the safety invariants of the mutable
+        // reference handed to us by the caller.
+        unsafe { self.init(address, size) }
+    }
+
     /// Creates a new heap with the given `bottom` and `size`. The bottom address must be valid
     /// and the memory in the `[heap_bottom, heap_bottom + heap_size)` range must not be used for
     /// anything else. This function is unsafe because it can cause undefined behavior if the
