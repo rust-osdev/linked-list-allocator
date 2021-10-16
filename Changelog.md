@@ -1,5 +1,7 @@
 # Unreleased
 
+- Merge front/back padding after allocate current hole ([#54](https://github.com/phil-opp/linked-list-allocator/pull/54))
+
 # 0.9.0 – 2021-05-01
 
 - Update `spinning_top` dependency to `v0.2.3` ([#50](https://github.com/phil-opp/linked-list-allocator/pull/50))
