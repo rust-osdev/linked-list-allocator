@@ -92,16 +92,9 @@ impl HoleList {
     pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<(NonNull<u8>, Layout), ()> {
         let aligned_layout = Self::align_layout(layout);
 
-        allocate_first_fit(&mut self.first, aligned_layout).map(|allocation| {
-            if let Some(padding) = allocation.front_padding {
-                deallocate(&mut self.first, padding.addr, padding.size);
-            }
-            if let Some(padding) = allocation.back_padding {
-                deallocate(&mut self.first, padding.addr, padding.size);
-            }
-
+        allocate_first_fit(&mut self.first, aligned_layout).map(|holeinfo| {
             (
-                NonNull::new(allocation.info.addr as *mut u8).unwrap(),
+                NonNull::new(holeinfo.addr as *mut u8).unwrap(),
                 aligned_layout,
             )
         })
@@ -242,13 +235,12 @@ fn split_hole(hole: HoleInfo, required_layout: Layout) -> Option<Allocation> {
 }
 
 /// Searches the list starting at the next hole of `previous` for a big enough hole. A hole is big
-/// enough if it can hold an allocation of `layout.size()` bytes with the given `layou.align()`.
+/// enough if it can hold an allocation of `layout.size()` bytes with the given `layout.align()`.
 /// When a hole is used for an allocation, there may be some needed padding before and/or after
-/// the allocation. This padding is returned as part of the `Allocation`. The caller must take
-/// care of freeing it again.
+/// the allocation. The padding will then merge back to linked-list
 /// This function uses the “first fit” strategy, so it breaks as soon as a big enough hole is
 /// found (and returns it).
-fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Result<Allocation, ()> {
+fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Result<HoleInfo, ()> {
     loop {
         let allocation: Option<Allocation> = previous
             .next
@@ -256,9 +248,34 @@ fn allocate_first_fit(mut previous: &mut Hole, layout: Layout) -> Result<Allocat
             .and_then(|current| split_hole(current.info(), layout.clone()));
         match allocation {
             Some(allocation) => {
-                // hole is big enough, so remove it from the list by updating the previous pointer
+                // link the front/back padding
+                // Note that there must be no hole between following pair:
+                // previous - front_padding
+                // front_padding - back_padding
+                // back_padding - previous.next
                 previous.next = previous.next.as_mut().unwrap().next.take();
-                return Ok(allocation);
+                if let Some(padding) = allocation.front_padding {
+                    let ptr = padding.addr as *mut Hole;
+                    unsafe {
+                        ptr.write(Hole {
+                            size: padding.size,
+                            next: previous.next.take(),
+                        })
+                    }
+                    previous.next = Some(unsafe { &mut *ptr });
+                    previous = move_helper(previous).next.as_mut().unwrap();
+                }
+                if let Some(padding) = allocation.back_padding {
+                    let ptr = padding.addr as *mut Hole;
+                    unsafe {
+                        ptr.write(Hole {
+                            size: padding.size,
+                            next: previous.next.take(),
+                        })
+                    }
+                    previous.next = Some(unsafe { &mut *ptr });
+                }
+                return Ok(allocation.info);
             }
             None if previous.next.is_some() => {
                 // try next hole
