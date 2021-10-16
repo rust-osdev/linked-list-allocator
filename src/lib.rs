@@ -117,8 +117,11 @@ impl Heap {
         }
     }
 
-    /// Crates a new heap from a slice of raw memory.
-    pub fn with_memory(mem: &'static mut [MaybeUninit<u8>]) -> Heap {
+    /// Creates a new heap from a slice of raw memory.
+    ///
+    /// This has the same effect as [`init_from_slice`] on an empty heap, but it is combined into a
+    /// single operation that can not panic.
+    pub fn from_slice(mem: &'static mut [MaybeUninit<u8>]) -> Heap {
         let size = mem.len();
         let address = mem.as_ptr() as usize;
         // SAFETY: The given address and size is valid according to the safety invariants of the

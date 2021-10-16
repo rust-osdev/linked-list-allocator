@@ -8,7 +8,7 @@ fn new_heap() -> Heap {
     let heap_space = Box::leak(Box::new([MaybeUninit::uninit(); HEAP_SIZE]));
     let assumed_location = heap_space.as_ptr() as usize;
 
-    let heap = Heap::with_memory(heap_space);
+    let heap = Heap::from_slice(heap_space);
     assert!(heap.bottom == assumed_location);
     assert!(heap.size == HEAP_SIZE);
     heap
@@ -18,11 +18,11 @@ fn new_max_heap() -> Heap {
     const HEAP_SIZE: usize = 1024;
     const HEAP_SIZE_MAX: usize = 2048;
     let heap_space = Box::leak(Box::new([MaybeUninit::<u8>::uninit(); HEAP_SIZE_MAX]));
-    let assumed_location = heap_space.as_ptr() as usize;
+    let start_ptr = heap_space.as_ptr() as usize;
 
     // Unsafe so that we have provenance over the whole allocation.
-    let heap = unsafe { Heap::new(assumed_location, HEAP_SIZE) };
-    assert!(heap.bottom == assumed_location);
+    let heap = unsafe { Heap::new(start_ptr, HEAP_SIZE) };
+    assert!(heap.bottom == start_ptr);
     assert!(heap.size == HEAP_SIZE);
     heap
 }
