@@ -17,6 +17,7 @@ use core::alloc::GlobalAlloc;
 use core::alloc::Layout;
 #[cfg(feature = "alloc_ref")]
 use core::alloc::{AllocError, Allocator};
+use core::mem::MaybeUninit;
 #[cfg(feature = "use_spin")]
 use core::ops::Deref;
 use core::ptr::NonNull;
@@ -73,6 +74,32 @@ impl Heap {
         self.holes = HoleList::new(heap_bottom, heap_size);
     }
 
+    /// Initialize an empty heap with provided memory.
+    ///
+    /// The caller is responsible for procuring a region of raw memory that may be utilized by the
+    /// allocator. This might be done via any method such as (unsafely) taking a region from the
+    /// program's memory, from a mutable static, or by allocating and leaking such memory from
+    /// another allocator.
+    ///
+    /// The latter method may be especially useful if the underlying allocator does not perform
+    /// deallocation (e.g. a simple bump allocator). Then the overlaid linked-list-allocator can
+    /// provide memory reclamation.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the heap is already initialized.
+    pub fn init_from_slice(&mut self, mem: &'static mut [MaybeUninit<u8>]) {
+        assert!(self.bottom == 0, "The heap has already been initialized.");
+        let size = mem.len();
+        let address = mem.as_ptr() as usize;
+        // SAFETY: All initialization requires the bottom address to be valid, which implies it
+        // must not be 0. Initially the address is 0. The assertion above ensures that no
+        // initialization had been called before.
+        // The given address and size is valid according to the safety invariants of the mutable
+        // reference handed to us by the caller.
+        unsafe { self.init(address, size) }
+    }
+
     /// Creates a new heap with the given `bottom` and `size`. The bottom address must be valid
     /// and the memory in the `[heap_bottom, heap_bottom + heap_size)` range must not be used for
     /// anything else. This function is unsafe because it can cause undefined behavior if the
@@ -88,6 +115,18 @@ impl Heap {
                 holes: HoleList::new(heap_bottom, heap_size),
             }
         }
+    }
+
+    /// Creates a new heap from a slice of raw memory.
+    ///
+    /// This has the same effect as [`init_from_slice`] on an empty heap, but it is combined into a
+    /// single operation that can not panic.
+    pub fn from_slice(mem: &'static mut [MaybeUninit<u8>]) -> Heap {
+        let size = mem.len();
+        let address = mem.as_ptr() as usize;
+        // SAFETY: The given address and size is valid according to the safety invariants of the
+        // mutable reference handed to us by the caller.
+        unsafe { Self::new(address, size) }
     }
 
     /// Allocates a chunk of the given size with the given alignment. Returns a pointer to the
