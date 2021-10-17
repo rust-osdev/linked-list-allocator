@@ -1,5 +1,6 @@
 # Unreleased
 
+- Add safe constructor and initialization for `Heap` ([#55](https://github.com/phil-opp/linked-list-allocator/pull/55))
 - Merge front/back padding after allocate current hole ([#54](https://github.com/phil-opp/linked-list-allocator/pull/54))
 
 # 0.9.0 – 2021-05-01
