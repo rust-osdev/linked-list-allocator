@@ -17,6 +17,7 @@ use core::alloc::GlobalAlloc;
 use core::alloc::Layout;
 #[cfg(feature = "alloc_ref")]
 use core::alloc::{AllocError, Allocator};
+use core::convert::{TryFrom, TryInto};
 use core::mem::MaybeUninit;
 #[cfg(feature = "use_spin")]
 use core::ops::Deref;
@@ -33,7 +34,7 @@ mod test;
 
 /// A fixed size heap backed by a linked list of free memory blocks.
 pub struct Heap {
-    bottom: usize,
+    bottom: *mut u8,
     size: usize,
     used: usize,
     holes: HoleList,
@@ -54,7 +55,7 @@ impl Heap {
     #[cfg(feature = "const_mut_refs")]
     pub const fn empty() -> Heap {
         Heap {
-            bottom: 0,
+            bottom: core::ptr::null_mut(),
             size: 0,
             used: 0,
             holes: HoleList::empty(),
@@ -67,7 +68,7 @@ impl Heap {
     ///
     /// This function must be called at most once and must only be used on an
     /// empty heap.
-    pub unsafe fn init(&mut self, heap_bottom: usize, heap_size: usize) {
+    pub unsafe fn init(&mut self, heap_bottom: *mut u8, heap_size: usize) {
         self.bottom = heap_bottom;
         self.size = heap_size;
         self.used = 0;
@@ -89,9 +90,12 @@ impl Heap {
     ///
     /// This method panics if the heap is already initialized.
     pub fn init_from_slice(&mut self, mem: &'static mut [MaybeUninit<u8>]) {
-        assert!(self.bottom == 0, "The heap has already been initialized.");
+        assert!(
+            self.bottom.is_null(),
+            "The heap has already been initialized."
+        );
         let size = mem.len();
-        let address = mem.as_ptr() as usize;
+        let address = mem.as_mut_ptr().cast();
         // SAFETY: All initialization requires the bottom address to be valid, which implies it
         // must not be 0. Initially the address is 0. The assertion above ensures that no
         // initialization had been called before.
@@ -104,7 +108,7 @@ impl Heap {
     /// and the memory in the `[heap_bottom, heap_bottom + heap_size)` range must not be used for
     /// anything else. This function is unsafe because it can cause undefined behavior if the
     /// given address is invalid.
-    pub unsafe fn new(heap_bottom: usize, heap_size: usize) -> Heap {
+    pub unsafe fn new(heap_bottom: *mut u8, heap_size: usize) -> Heap {
         if heap_size < HoleList::min_size() {
             Self::empty()
         } else {
@@ -123,7 +127,7 @@ impl Heap {
     /// single operation that can not panic.
     pub fn from_slice(mem: &'static mut [MaybeUninit<u8>]) -> Heap {
         let size = mem.len();
-        let address = mem.as_ptr() as usize;
+        let address = mem.as_mut_ptr().cast();
         // SAFETY: The given address and size is valid according to the safety invariants of the
         // mutable reference handed to us by the caller.
         unsafe { Self::new(address, size) }
@@ -156,7 +160,7 @@ impl Heap {
     }
 
     /// Returns the bottom address of the heap.
-    pub fn bottom(&self) -> usize {
+    pub fn bottom(&self) -> *mut u8 {
         self.bottom
     }
 
@@ -166,8 +170,9 @@ impl Heap {
     }
 
     /// Return the top address of the heap
-    pub fn top(&self) -> usize {
-        self.bottom + self.size
+    pub fn top(&self) -> *mut u8 {
+        self.bottom
+            .wrapping_offset(isize::try_from(self.size).unwrap())
     }
 
     /// Returns the size of the used part of the heap
@@ -234,7 +239,7 @@ impl LockedHeap {
     /// and the memory in the `[heap_bottom, heap_bottom + heap_size)` range must not be used for
     /// anything else. This function is unsafe because it can cause undefined behavior if the
     /// given address is invalid.
-    pub unsafe fn new(heap_bottom: usize, heap_size: usize) -> LockedHeap {
+    pub unsafe fn new(heap_bottom: *mut u8, heap_size: usize) -> LockedHeap {
         LockedHeap(Spinlock::new(Heap {
             bottom: heap_bottom,
             size: heap_size,
@@ -272,18 +277,23 @@ unsafe impl GlobalAlloc for LockedHeap {
 
 /// Align downwards. Returns the greatest x with alignment `align`
 /// so that x <= addr. The alignment must be a power of 2.
-pub fn align_down(addr: usize, align: usize) -> usize {
+pub fn align_down_size(size: usize, align: usize) -> usize {
     if align.is_power_of_two() {
-        addr & !(align - 1)
+        size & !(align - 1)
     } else if align == 0 {
-        addr
+        size
     } else {
         panic!("`align` must be a power of 2");
     }
 }
 
+pub fn align_up_size(size: usize, align: usize) -> usize {
+    align_down_size(size + align - 1, align)
+}
+
 /// Align upwards. Returns the smallest x with alignment `align`
 /// so that x >= addr. The alignment must be a power of 2.
-pub fn align_up(addr: usize, align: usize) -> usize {
-    align_down(addr + align - 1, align)
+pub fn align_up(addr: *mut u8, align: usize) -> *mut u8 {
+    let offset = addr.align_offset(align);
+    addr.wrapping_offset(offset.try_into().unwrap())
 }

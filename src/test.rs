@@ -6,7 +6,7 @@ use std::prelude::v1::*;
 fn new_heap() -> Heap {
     const HEAP_SIZE: usize = 1000;
     let heap_space = Box::leak(Box::new([MaybeUninit::uninit(); HEAP_SIZE]));
-    let assumed_location = heap_space.as_ptr() as usize;
+    let assumed_location = heap_space.as_mut_ptr().cast();
 
     let heap = Heap::from_slice(heap_space);
     assert!(heap.bottom == assumed_location);
@@ -18,7 +18,7 @@ fn new_max_heap() -> Heap {
     const HEAP_SIZE: usize = 1024;
     const HEAP_SIZE_MAX: usize = 2048;
     let heap_space = Box::leak(Box::new([MaybeUninit::<u8>::uninit(); HEAP_SIZE_MAX]));
-    let start_ptr = heap_space.as_ptr() as usize;
+    let start_ptr = heap_space.as_mut_ptr().cast();
 
     // Unsafe so that we have provenance over the whole allocation.
     let heap = unsafe { Heap::new(start_ptr, HEAP_SIZE) };
@@ -49,14 +49,17 @@ fn allocate_double_usize() {
     let layout = Layout::from_size_align(size, align_of::<usize>());
     let addr = heap.allocate_first_fit(layout.unwrap());
     assert!(addr.is_ok());
-    let addr = addr.unwrap().as_ptr() as usize;
+    let addr = addr.unwrap().as_ptr();
     assert!(addr == heap.bottom);
     let (hole_addr, hole_size) = heap.holes.first_hole().expect("ERROR: no hole left");
-    assert!(hole_addr == heap.bottom + size);
+    assert!(hole_addr == heap.bottom.wrapping_add(size));
     assert!(hole_size == heap.size - size);
 
     unsafe {
-        assert_eq!((*((addr + size) as *const Hole)).size, heap.size - size);
+        assert_eq!(
+            (*((addr.wrapping_offset(size.try_into().unwrap())) as *const Hole)).size,
+            heap.size - size
+        );
     }
 }
 
