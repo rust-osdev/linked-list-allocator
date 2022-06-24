@@ -31,8 +31,9 @@ fn new_heap() -> Heap {
 fn new_max_heap() -> Heap {
     const HEAP_SIZE: usize = 1024;
     const HEAP_SIZE_MAX: usize = 2048;
-    let heap_space = Box::leak(Box::new([MaybeUninit::<u8>::uninit(); HEAP_SIZE_MAX]));
-    let start_ptr = heap_space.as_mut_ptr().cast();
+    let heap_space = Box::leak(Box::new(Chonk::<HEAP_SIZE_MAX>::new()));
+    let data = &mut heap_space.data;
+    let start_ptr = data.as_mut_ptr().cast();
 
     // Unsafe so that we have provenance over the whole allocation.
     let heap = unsafe { Heap::new(start_ptr, HEAP_SIZE) };
