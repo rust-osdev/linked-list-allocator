@@ -3,12 +3,26 @@ use core::alloc::Layout;
 use std::mem::{align_of, size_of, MaybeUninit};
 use std::prelude::v1::*;
 
+#[repr(align(128))]
+struct Chonk<const N: usize> {
+    data: [MaybeUninit<u8>; N]
+}
+
+impl<const N: usize> Chonk<N> {
+    pub fn new() -> Self {
+        Self {
+            data: [MaybeUninit::uninit(); N],
+        }
+    }
+}
+
 fn new_heap() -> Heap {
     const HEAP_SIZE: usize = 1000;
-    let heap_space = Box::leak(Box::new([MaybeUninit::uninit(); HEAP_SIZE]));
-    let assumed_location = heap_space.as_mut_ptr().cast();
+    let heap_space = Box::leak(Box::new(Chonk::<HEAP_SIZE>::new()));
+    let data = &mut heap_space.data;
+    let assumed_location = data.as_mut_ptr().cast();
 
-    let heap = Heap::from_slice(heap_space);
+    let heap = Heap::from_slice(data);
     assert!(heap.bottom == assumed_location);
     assert!(heap.size == HEAP_SIZE);
     heap
@@ -73,8 +87,10 @@ fn allocate_and_free_double_usize() {
         *(x.as_ptr() as *mut (usize, usize)) = (0xdeafdeadbeafbabe, 0xdeafdeadbeafbabe);
 
         heap.deallocate(x, layout.clone());
-        assert_eq!((*(heap.bottom as *const Hole)).size, heap.size);
-        assert!((*(heap.bottom as *const Hole)).next.is_none());
+        let real_first = heap.holes().first.next.as_ref().unwrap();
+
+        assert_eq!(real_first.size, heap.size);
+        assert!(real_first.next.is_none());
     }
 }
 

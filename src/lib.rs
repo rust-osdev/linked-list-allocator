@@ -185,6 +185,10 @@ impl Heap {
         self.size - self.used
     }
 
+    pub(crate) fn holes(&self) -> &HoleList {
+        &self.holes
+    }
+
     /// Extends the size of the heap by creating a new hole at the end
     ///
     /// # Unsafety

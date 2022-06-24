@@ -10,7 +10,7 @@ use super::align_up;
 
 /// A sorted list of holes. It uses the the holes itself to store its nodes.
 pub struct HoleList {
-    first: Hole, // dummy
+    pub(crate) first: Hole, // dummy
 }
 
 impl HoleList {
@@ -138,14 +138,7 @@ impl HoleList {
 }
 
 /// A block containing free memory. It points to the next hole and thus forms a linked list.
-#[cfg(not(test))]
-struct Hole {
-    size: usize,
-    next: Option<&'static mut Hole>,
-}
-
-#[cfg(test)]
-pub struct Hole {
+pub(crate) struct Hole {
     pub size: usize,
     pub next: Option<&'static mut Hole>,
 }
