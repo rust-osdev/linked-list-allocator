@@ -32,8 +32,8 @@ use hole::HoleList;
 use spinning_top::Spinlock;
 
 pub mod hole;
-// #[cfg(test)]
-// mod test;
+#[cfg(test)]
+mod test;
 
 /// A fixed size heap backed by a linked list of free memory blocks.
 pub struct Heap {
@@ -151,16 +151,16 @@ impl Heap {
         }
     }
 
-    // /// Frees the given allocation. `ptr` must be a pointer returned
-    // /// by a call to the `allocate_first_fit` function with identical size and alignment. Undefined
-    // /// behavior may occur for invalid arguments, thus this function is unsafe.
-    // ///
-    // /// This function walks the list of free memory blocks and inserts the freed block at the
-    // /// correct place. If the freed block is adjacent to another free block, the blocks are merged
-    // /// again. This operation is in `O(n)` since the list needs to be sorted by address.
-    // pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) {
-    //     self.used -= self.holes.deallocate(ptr, layout).size();
-    // }
+    /// Frees the given allocation. `ptr` must be a pointer returned
+    /// by a call to the `allocate_first_fit` function with identical size and alignment. Undefined
+    /// behavior may occur for invalid arguments, thus this function is unsafe.
+    ///
+    /// This function walks the list of free memory blocks and inserts the freed block at the
+    /// correct place. If the freed block is adjacent to another free block, the blocks are merged
+    /// again. This operation is in `O(n)` since the list needs to be sorted by address.
+    pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) {
+        self.used -= self.holes.deallocate(ptr, layout).size();
+    }
 
     /// Returns the bottom address of the heap.
     pub fn bottom(&self) -> *mut u8 {
@@ -196,18 +196,18 @@ impl Heap {
         &mut self.holes
     }
 
-    // /// Extends the size of the heap by creating a new hole at the end
-    // ///
-    // /// # Unsafety
-    // ///
-    // /// The new extended area must be valid
-    // pub unsafe fn extend(&mut self, by: usize) {
-    //     let top = self.top();
-    //     let layout = Layout::from_size_align(by, 1).unwrap();
-    //     self.holes
-    //         .deallocate(NonNull::new_unchecked(top as *mut u8), layout);
-    //     self.size += by;
-    // }
+    /// Extends the size of the heap by creating a new hole at the end
+    ///
+    /// # Unsafety
+    ///
+    /// The new extended area must be valid
+    pub unsafe fn extend(&mut self, by: usize) {
+        let top = self.top();
+        let layout = Layout::from_size_align(by, 1).unwrap();
+        self.holes
+            .deallocate(NonNull::new_unchecked(top as *mut u8), layout);
+        self.size += by;
+    }
 }
 
 // #[cfg(all(feature = "alloc_ref", feature = "use_spin"))]

@@ -88,7 +88,7 @@ fn allocate_and_free_double_usize() {
         *(x.as_ptr() as *mut (usize, usize)) = (0xdeafdeadbeafbabe, 0xdeafdeadbeafbabe);
 
         heap.deallocate(x, layout.clone());
-        let real_first = heap.holes().first.next.as_ref().unwrap();
+        let real_first = heap.holes().first.next.as_ref().unwrap().as_ref();
 
         assert_eq!(real_first.size, heap.size);
         assert!(real_first.next.is_none());
