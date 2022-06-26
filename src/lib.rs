@@ -5,9 +5,6 @@
 )]
 #![no_std]
 
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
 #[cfg(test)]
 #[macro_use]
 extern crate std;
@@ -188,14 +185,6 @@ impl Heap {
         self.size - self.used
     }
 
-    pub(crate) fn holes(&self) -> &HoleList {
-        &self.holes
-    }
-
-    pub(crate) fn holes_mut(&mut self) -> &mut HoleList {
-        &mut self.holes
-    }
-
     /// Extends the size of the heap by creating a new hole at the end
     ///
     /// # Unsafety
@@ -276,7 +265,7 @@ unsafe impl GlobalAlloc for LockedHeap {
             .lock()
             .allocate_first_fit(layout)
             .ok()
-            .map_or(0 as *mut u8, |allocation| allocation.as_ptr())
+            .map_or(core::ptr::null_mut(), |allocation| allocation.as_ptr())
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {

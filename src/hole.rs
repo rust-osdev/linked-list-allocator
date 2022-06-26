@@ -1,5 +1,5 @@
 use core::alloc::Layout;
-use core::convert::{TryFrom, TryInto};
+use core::convert::TryInto;
 use core::mem;
 use core::mem::{align_of, size_of};
 use core::ptr::NonNull;
@@ -13,42 +13,20 @@ pub struct HoleList {
     pub(crate) first: Hole, // dummy
 }
 
-pub struct Cursor {
+pub(crate) struct Cursor {
     prev: NonNull<Hole>,
     hole: NonNull<Hole>,
-}
-
-enum Position<'a> {
-    BeforeCurrent,
-    BetweenCurrentNext {
-        curr: &'a Hole,
-        next: &'a Hole,
-    },
-    AfterBoth,
-    AfterCurrentNoNext,
 }
 
 impl Cursor {
     fn next(mut self) -> Option<Self> {
         unsafe {
-            if let Some(nhole) = self.hole.as_mut().next {
-                Some(Cursor {
+            self.hole.as_mut().next.map(|nhole| {
+                Cursor {
                     prev: self.hole,
                     hole: nhole,
-                })
-            } else {
-                None
-            }
-        }
-    }
-
-    fn peek_next(&self) -> Option<&Hole> {
-        unsafe {
-            if let Some(nhole) = self.hole.as_ref().next {
-                Some(nhole.as_ref())
-            } else {
-                None
-            }
+                }
+            })
         }
     }
 
@@ -170,7 +148,6 @@ impl Cursor {
 
         // As of now, the old `Hole` is no more. We are about to replace it with one or more of
         // the front padding, the allocation, and the back padding.
-        drop(hole);
 
         match (front_padding, back_padding) {
             (None, None) => {
@@ -249,7 +226,7 @@ impl HoleList {
         }
     }
 
-    pub fn cursor(&mut self) -> Option<Cursor> {
+    pub(crate) fn cursor(&mut self) -> Option<Cursor> {
         if let Some(hole) = self.first.next {
             Some(Cursor {
                 hole,
@@ -326,9 +303,7 @@ impl HoleList {
             size = Self::min_size();
         }
         let size = align_up_size(size, mem::align_of::<Hole>());
-        let layout = Layout::from_size_align(size, layout.align()).unwrap();
-
-        layout
+        Layout::from_size_align(size, layout.align()).unwrap()
     }
 
     /// Searches the list for a big enough hole.
@@ -396,33 +371,11 @@ pub(crate) struct Hole {
     pub next: Option<NonNull<Hole>>,
 }
 
-impl Hole {
-    /// Returns basic information about the hole.
-    fn info(&mut self) -> HoleInfo {
-        HoleInfo {
-            addr: self as *mut _ as *mut u8,
-            size: self.size,
-        }
-    }
-
-    fn addr_u8(&self) -> *const u8 {
-        self as *const Hole as *const u8
-    }
-}
-
 /// Basic information about a hole.
 #[derive(Debug, Clone, Copy)]
 struct HoleInfo {
     addr: *mut u8,
     size: usize,
-}
-
-/// The result returned by `split_hole` and `allocate_first_fit`. Contains the address and size of
-/// the allocation (in the `info` field), and the front and back padding.
-struct Allocation {
-    info: HoleInfo,
-    front_padding: Option<HoleInfo>,
-    back_padding: Option<HoleInfo>,
 }
 
 unsafe fn make_hole(addr: *mut u8, size: usize) -> NonNull<Hole> {
@@ -482,12 +435,11 @@ impl Cursor {
         }
     }
 
-
-    // Merge the current node with an IMMEDIATELY FOLLOWING next node
-    fn try_merge_next_two(self) {
+    // Merge the current node with up to n following nodes
+    fn try_merge_next_n(self, max: usize) {
         let Cursor { prev: _, mut hole } = self;
 
-        for _ in 0..2 {
+        for _ in 0..max {
             // Is there a next node?
             let mut next = if let Some(next) = unsafe { hole.as_mut() }.next.as_ref() {
                 *next
@@ -496,13 +448,12 @@ impl Cursor {
             };
 
             // Can we directly merge these? e.g. are they touching?
-            //
-            // TODO(AJM): Should "touching" also include deltas <= node size?
             let hole_u8 = hole.as_ptr().cast::<u8>();
             let hole_sz = unsafe { hole.as_ref().size };
             let next_u8 = next.as_ptr().cast::<u8>();
+            let end = hole_u8.wrapping_add(hole_sz);
 
-            let touching = hole_u8.wrapping_add(hole_sz) == next_u8;
+            let touching = end == next_u8;
 
             if touching {
                 let next_sz;
@@ -531,13 +482,18 @@ impl Cursor {
 /// Frees the allocation given by `(addr, size)`. It starts at the given hole and walks the list to
 /// find the correct place (the list is sorted by address).
 fn deallocate(list: &mut HoleList, addr: *mut u8, size: usize) {
-    // Start off by just making this allocation a hole.
+    // Start off by just making this allocation a hole where it stands.
+    // We'll attempt to merge it with other nodes once we figure out where
+    // it should live
     let hole = unsafe { make_hole(addr, size) };
 
+    // Now, try to get a cursor to the list - this only works if we have at least
+    // one non-"dummy" hole in the list
     let cursor = if let Some(cursor) = list.cursor() {
         cursor
     } else {
-        // Oh hey, there are no holes at all. That means this just becomes the only hole!
+        // Oh hey, there are no "real" holes at all. That means this just
+        // becomes the only "real" hole!
         list.first.next = Some(hole);
         return;
     };
@@ -545,42 +501,36 @@ fn deallocate(list: &mut HoleList, addr: *mut u8, size: usize) {
     // First, check if we can just insert this node at the top of the list. If the
     // insertion succeeded, then our cursor now points to the NEW node, behind the
     // previous location the cursor was pointing to.
-    let cursor = match cursor.try_insert_back(hole) {
+    //
+    // Otherwise, our cursor will point at the current non-"dummy" head of the list
+    let (cursor, n) = match cursor.try_insert_back(hole) {
         Ok(cursor) => {
-            // Yup! It lives at the front of the list. Hooray!
-            cursor
+            // Yup! It lives at the front of the list. Hooray! Attempt to merge
+            // it with just ONE next node, since it is at the front of the list
+            (cursor, 1)
         },
         Err(mut cursor) => {
             // Nope. It lives somewhere else. Advance the list until we find its home
             while let Err(()) = cursor.try_insert_after(hole) {
                 cursor = cursor.next().unwrap();
             }
-            cursor
+            // Great! We found a home for it, our cursor is now JUST BEFORE the new
+            // node we inserted, so we need to try to merge up to twice: One to combine
+            // the current node to the new node, then once more to combine the new node
+            // with the node after that.
+            (cursor, 2)
         },
     };
 
     // We now need to merge up to two times to combine the current node with the next
     // two nodes.
-    cursor.try_merge_next_two();
-}
-
-
-/// Identity function to ease moving of references.
-///
-/// By default, references are reborrowed instead of moved (equivalent to `&mut *reference`). This
-/// function forces a move.
-///
-/// for more information, see section “id Forces References To Move” in:
-/// https://bluss.github.io/rust/fun/2015/10/11/stuff-the-identity-function-does/
-fn move_helper<T>(x: T) -> T {
-    x
+    cursor.try_merge_next_n(n);
 }
 
 #[cfg(test)]
 pub mod test {
-    use super::*;
     use core::alloc::Layout;
-    use std::mem::{align_of, size_of, MaybeUninit};
+    use std::mem::MaybeUninit;
     use std::prelude::v1::*;
     use crate::Heap;
 
@@ -612,16 +562,13 @@ pub mod test {
     #[test]
     fn cursor() {
         let mut heap = new_heap();
-        let curs = heap.holes_mut().cursor().unwrap();
+        let curs = heap.holes.cursor().unwrap();
         // This is the "dummy" node
         assert_eq!(curs.previous().size, 0);
         // This is the "full" heap
         assert_eq!(curs.current().size, 1000);
         // There is no other hole
-        assert!(curs.peek_next().is_none());
-
-        let reqd = Layout::from_size_align(256, 1).unwrap();
-        let _ = curs.split_current(reqd).map_err(drop).unwrap();
+        assert!(curs.next().is_none());
     }
 
     #[test]

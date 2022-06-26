@@ -88,7 +88,7 @@ fn allocate_and_free_double_usize() {
         *(x.as_ptr() as *mut (usize, usize)) = (0xdeafdeadbeafbabe, 0xdeafdeadbeafbabe);
 
         heap.deallocate(x, layout.clone());
-        let real_first = heap.holes().first.next.as_ref().unwrap().as_ref();
+        let real_first = heap.holes.first.next.as_ref().unwrap().as_ref();
 
         assert_eq!(real_first.size, heap.size);
         assert!(real_first.next.is_none());
@@ -310,21 +310,3 @@ fn extend_fragmented_heap() {
     // Try to allocate there
     assert!(heap.allocate_first_fit(layout_2.clone()).is_ok());
 }
-
-
-// #[test]
-// fn break_fragmented_heap() {
-//     let mut heap = new_heap();
-
-//     let layout_1 = Layout::from_size_align(505, 1).unwrap();
-//     let alloc1 = heap.allocate_first_fit(layout_1.clone());
-//     assert!(alloc1.is_ok());
-
-//     unsafe {
-//         heap.deallocate(alloc1.unwrap(), layout_1.clone());
-//     }
-
-//     let layout_2 = Layout::from_size_align(1024, 1).unwrap();
-//     let alloc2 = heap.allocate_first_fit(layout_2.clone());
-//     assert!(alloc2.is_ok());
-// }
