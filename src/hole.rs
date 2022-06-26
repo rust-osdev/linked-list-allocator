@@ -21,25 +21,19 @@ pub(crate) struct Cursor {
 impl Cursor {
     fn next(mut self) -> Option<Self> {
         unsafe {
-            self.hole.as_mut().next.map(|nhole| {
-                Cursor {
-                    prev: self.hole,
-                    hole: nhole,
-                }
+            self.hole.as_mut().next.map(|nhole| Cursor {
+                prev: self.hole,
+                hole: nhole,
             })
         }
     }
 
     fn current(&self) -> &Hole {
-        unsafe {
-            self.hole.as_ref()
-        }
+        unsafe { self.hole.as_ref() }
     }
 
     fn previous(&self) -> &Hole {
-        unsafe {
-            self.prev.as_ref()
-        }
+        unsafe { self.prev.as_ref() }
     }
 
     // On success, it returns the new allocation, and the linked list has been updated
@@ -128,8 +122,8 @@ impl Cursor {
                 Some(HoleInfo {
                     addr: back_padding_start,
                     size: unsafe { hole_end.offset_from(back_padding_start) }
-                            .try_into()
-                            .unwrap(),
+                        .try_into()
+                        .unwrap(),
                 })
             } else {
                 // No, it does not.
@@ -142,7 +136,9 @@ impl Cursor {
         ////////////////////////////////////////////////////////////////////////////
         let Cursor { mut prev, mut hole } = self;
         // Remove the current location from the previous node
-        unsafe { prev.as_mut().next = None; }
+        unsafe {
+            prev.as_mut().next = None;
+        }
         // Take the next node out of our current node
         let maybe_next_addr: Option<NonNull<Hole>> = unsafe { hole.as_mut().next.take() };
 
@@ -153,8 +149,10 @@ impl Cursor {
             (None, None) => {
                 // No padding at all, how lucky! We still need to connect the PREVIOUS node
                 // to the NEXT node, if there was one
-                unsafe { prev.as_mut().next = maybe_next_addr; }
-            },
+                unsafe {
+                    prev.as_mut().next = maybe_next_addr;
+                }
+            }
             (None, Some(singlepad)) | (Some(singlepad), None) => unsafe {
                 // We have front padding OR back padding, but not both.
                 //
@@ -195,7 +193,7 @@ impl Cursor {
 
                 // Then connect the OLD previous to the NEW FRONT padding
                 prev.as_mut().next = Some(NonNull::new_unchecked(frontpad_ptr));
-            }
+            },
         }
 
         // Well that went swimmingly! Hand off the allocation, with surgery performed successfully!
@@ -324,10 +322,10 @@ impl HoleList {
             match cursor.split_current(aligned_layout) {
                 Ok((ptr, _len)) => {
                     return Ok((NonNull::new(ptr).ok_or(())?, aligned_layout));
-                },
+                }
                 Err(curs) => {
                     cursor = curs.next().ok_or(())?;
-                },
+                }
             }
         }
     }
@@ -358,10 +356,11 @@ impl HoleList {
     /// Returns information about the first hole for test purposes.
     #[cfg(test)]
     pub fn first_hole(&self) -> Option<(*const u8, usize)> {
-        self.first
-            .next
-            .as_ref()
-            .map(|hole| (hole.as_ptr() as *mut u8 as *const u8, unsafe { hole.as_ref().size }))
+        self.first.next.as_ref().map(|hole| {
+            (hole.as_ptr() as *mut u8 as *const u8, unsafe {
+                hole.as_ref().size
+            })
+        })
     }
 }
 
@@ -381,7 +380,7 @@ struct HoleInfo {
 unsafe fn make_hole(addr: *mut u8, size: usize) -> NonNull<Hole> {
     let hole_addr = addr.cast::<Hole>();
     debug_assert_eq!(addr as usize % align_of::<Hole>(), 0);
-    hole_addr.write(Hole {size, next: None});
+    hole_addr.write(Hole { size, next: None });
     NonNull::new_unchecked(hole_addr)
 }
 
@@ -475,7 +474,6 @@ impl Cursor {
                 hole = next;
             }
         }
-
     }
 }
 
@@ -508,7 +506,7 @@ fn deallocate(list: &mut HoleList, addr: *mut u8, size: usize) {
             // Yup! It lives at the front of the list. Hooray! Attempt to merge
             // it with just ONE next node, since it is at the front of the list
             (cursor, 1)
-        },
+        }
         Err(mut cursor) => {
             // Nope. It lives somewhere else. Advance the list until we find its home
             while let Err(()) = cursor.try_insert_after(hole) {
@@ -519,7 +517,7 @@ fn deallocate(list: &mut HoleList, addr: *mut u8, size: usize) {
             // the current node to the new node, then once more to combine the new node
             // with the node after that.
             (cursor, 2)
-        },
+        }
     };
 
     // We now need to merge up to two times to combine the current node with the next
@@ -529,14 +527,14 @@ fn deallocate(list: &mut HoleList, addr: *mut u8, size: usize) {
 
 #[cfg(test)]
 pub mod test {
+    use crate::Heap;
     use core::alloc::Layout;
     use std::mem::MaybeUninit;
     use std::prelude::v1::*;
-    use crate::Heap;
 
     #[repr(align(128))]
     struct Chonk<const N: usize> {
-        data: [MaybeUninit<u8>; N]
+        data: [MaybeUninit<u8>; N],
     }
 
     impl<const N: usize> Chonk<N> {

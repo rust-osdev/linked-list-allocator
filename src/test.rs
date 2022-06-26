@@ -5,7 +5,7 @@ use std::prelude::v1::*;
 
 #[repr(align(128))]
 struct Chonk<const N: usize> {
-    data: [MaybeUninit<u8>; N]
+    data: [MaybeUninit<u8>; N],
 }
 
 impl<const N: usize> Chonk<N> {
