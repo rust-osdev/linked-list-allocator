@@ -210,81 +210,81 @@ impl Heap {
     }
 }
 
-// #[cfg(all(feature = "alloc_ref", feature = "use_spin"))]
-// unsafe impl Allocator for LockedHeap {
-//     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-//         if layout.size() == 0 {
-//             return Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0));
-//         }
-//         match self.0.lock().allocate_first_fit(layout) {
-//             Ok(ptr) => Ok(NonNull::slice_from_raw_parts(ptr, layout.size())),
-//             Err(()) => Err(AllocError),
-//         }
-//     }
+#[cfg(all(feature = "alloc_ref", feature = "use_spin"))]
+unsafe impl Allocator for LockedHeap {
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        if layout.size() == 0 {
+            return Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0));
+        }
+        match self.0.lock().allocate_first_fit(layout) {
+            Ok(ptr) => Ok(NonNull::slice_from_raw_parts(ptr, layout.size())),
+            Err(()) => Err(AllocError),
+        }
+    }
 
-//     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-//         if layout.size() != 0 {
-//             self.0.lock().deallocate(ptr, layout);
-//         }
-//     }
-// }
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+        if layout.size() != 0 {
+            self.0.lock().deallocate(ptr, layout);
+        }
+    }
+}
 
-// #[cfg(feature = "use_spin")]
-// pub struct LockedHeap(Spinlock<Heap>);
+#[cfg(feature = "use_spin")]
+pub struct LockedHeap(Spinlock<Heap>);
 
-// #[cfg(feature = "use_spin")]
-// impl LockedHeap {
-//     /// Creates an empty heap. All allocate calls will return `None`.
-//     #[cfg(feature = "use_spin_nightly")]
-//     pub const fn empty() -> LockedHeap {
-//         LockedHeap(Spinlock::new(Heap::empty()))
-//     }
+#[cfg(feature = "use_spin")]
+impl LockedHeap {
+    /// Creates an empty heap. All allocate calls will return `None`.
+    #[cfg(feature = "use_spin_nightly")]
+    pub const fn empty() -> LockedHeap {
+        LockedHeap(Spinlock::new(Heap::empty()))
+    }
 
-//     /// Creates an empty heap. All allocate calls will return `None`.
-//     #[cfg(not(feature = "use_spin_nightly"))]
-//     pub fn empty() -> LockedHeap {
-//         LockedHeap(Spinlock::new(Heap::empty()))
-//     }
+    /// Creates an empty heap. All allocate calls will return `None`.
+    #[cfg(not(feature = "use_spin_nightly"))]
+    pub fn empty() -> LockedHeap {
+        LockedHeap(Spinlock::new(Heap::empty()))
+    }
 
-//     /// Creates a new heap with the given `bottom` and `size`. The bottom address must be valid
-//     /// and the memory in the `[heap_bottom, heap_bottom + heap_size)` range must not be used for
-//     /// anything else. This function is unsafe because it can cause undefined behavior if the
-//     /// given address is invalid.
-//     pub unsafe fn new(heap_bottom: *mut u8, heap_size: usize) -> LockedHeap {
-//         LockedHeap(Spinlock::new(Heap {
-//             bottom: heap_bottom,
-//             size: heap_size,
-//             used: 0,
-//             holes: HoleList::new(heap_bottom, heap_size),
-//         }))
-//     }
-// }
+    /// Creates a new heap with the given `bottom` and `size`. The bottom address must be valid
+    /// and the memory in the `[heap_bottom, heap_bottom + heap_size)` range must not be used for
+    /// anything else. This function is unsafe because it can cause undefined behavior if the
+    /// given address is invalid.
+    pub unsafe fn new(heap_bottom: *mut u8, heap_size: usize) -> LockedHeap {
+        LockedHeap(Spinlock::new(Heap {
+            bottom: heap_bottom,
+            size: heap_size,
+            used: 0,
+            holes: HoleList::new(heap_bottom, heap_size),
+        }))
+    }
+}
 
-// #[cfg(feature = "use_spin")]
-// impl Deref for LockedHeap {
-//     type Target = Spinlock<Heap>;
+#[cfg(feature = "use_spin")]
+impl Deref for LockedHeap {
+    type Target = Spinlock<Heap>;
 
-//     fn deref(&self) -> &Spinlock<Heap> {
-//         &self.0
-//     }
-// }
+    fn deref(&self) -> &Spinlock<Heap> {
+        &self.0
+    }
+}
 
-// #[cfg(feature = "use_spin")]
-// unsafe impl GlobalAlloc for LockedHeap {
-//     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-//         self.0
-//             .lock()
-//             .allocate_first_fit(layout)
-//             .ok()
-//             .map_or(0 as *mut u8, |allocation| allocation.as_ptr())
-//     }
+#[cfg(feature = "use_spin")]
+unsafe impl GlobalAlloc for LockedHeap {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        self.0
+            .lock()
+            .allocate_first_fit(layout)
+            .ok()
+            .map_or(0 as *mut u8, |allocation| allocation.as_ptr())
+    }
 
-//     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-//         self.0
-//             .lock()
-//             .deallocate(NonNull::new_unchecked(ptr), layout)
-//     }
-// }
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        self.0
+            .lock()
+            .deallocate(NonNull::new_unchecked(ptr), layout)
+    }
+}
 
 /// Align downwards. Returns the greatest x with alignment `align`
 /// so that x <= addr. The alignment must be a power of 2.

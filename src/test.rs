@@ -302,11 +302,29 @@ fn extend_fragmented_heap() {
         heap.deallocate(alloc1.unwrap(), layout_1.clone());
     }
 
-    // unsafe {
-    //     heap.extend(1024);
-    // }
+    unsafe {
+        heap.extend(1024);
+    }
 
-    // // We got additional 1024 bytes hole at the end of the heap
-    // // Try to allocate there
-    // assert!(heap.allocate_first_fit(layout_2.clone()).is_ok());
+    // We got additional 1024 bytes hole at the end of the heap
+    // Try to allocate there
+    assert!(heap.allocate_first_fit(layout_2.clone()).is_ok());
 }
+
+
+// #[test]
+// fn break_fragmented_heap() {
+//     let mut heap = new_heap();
+
+//     let layout_1 = Layout::from_size_align(505, 1).unwrap();
+//     let alloc1 = heap.allocate_first_fit(layout_1.clone());
+//     assert!(alloc1.is_ok());
+
+//     unsafe {
+//         heap.deallocate(alloc1.unwrap(), layout_1.clone());
+//     }
+
+//     let layout_2 = Layout::from_size_align(1024, 1).unwrap();
+//     let alloc2 = heap.allocate_first_fit(layout_2.clone());
+//     assert!(alloc2.is_ok());
+// }
