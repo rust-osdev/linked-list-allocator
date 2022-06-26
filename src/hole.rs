@@ -83,9 +83,7 @@ impl Cursor {
                     // it will just have a smaller size after we have chopped off the "tail" for
                     // the allocation.
                     addr: hole_addr_u8,
-                    size: unsafe { aligned_addr.offset_from(hole_addr_u8) }
-                        .try_into()
-                        .unwrap(),
+                    size: (aligned_addr as usize) - (hole_addr_u8 as usize),
                 });
                 aligned_addr
             };
@@ -109,24 +107,25 @@ impl Cursor {
             // sort of assume that the allocation is actually a bit larger than it
             // actually needs to be.
             //
-            // TODO(AJM): Write a test for this - does the code actually handle this
-            // correctly? Do we need to check the delta is less than an aligned hole
-            // size?
+            // NOTE: Because we always use `HoleList::align_layout`, the size of
+            // the new allocation is always "rounded up" to cover any partial gaps that
+            // would have occurred. For this reason, we DON'T need to "round up"
+            // to account for an unaligned hole spot.
             let hole_layout = Layout::new::<Hole>();
             let back_padding_start = align_up(allocation_end, hole_layout.align());
             let back_padding_end = back_padding_start.wrapping_add(hole_layout.size());
 
             // Will the proposed new back padding actually fit in the old hole slot?
             back_padding = if back_padding_end <= hole_end {
-                // Yes, it does!
+                // Yes, it does! Place a back padding node
                 Some(HoleInfo {
                     addr: back_padding_start,
-                    size: unsafe { hole_end.offset_from(back_padding_start) }
-                        .try_into()
-                        .unwrap(),
+                    size: (hole_end as usize) - (back_padding_start as usize),
                 })
             } else {
-                // No, it does not.
+                // No, it does not. We are now pretending the allocation now
+                // holds the extra 0..size_of::<Hole>() bytes that are not
+                // big enough to hold what SHOULD be back_padding
                 None
             };
         }
@@ -236,6 +235,7 @@ impl HoleList {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn debug(&mut self) {
         if let Some(cursor) = self.cursor() {
             let mut cursor = cursor;
@@ -261,11 +261,11 @@ impl HoleList {
 
     /// Creates a `HoleList` that contains the given hole.
     ///
-    /// ## Safety
+    /// # Safety
     ///
-    /// This function is unsafe because it
-    /// creates a hole at the given `hole_addr`. This can cause undefined behavior if this address
-    /// is invalid or if memory from the `[hole_addr, hole_addr+size)` range is used somewhere else.
+    /// This function is unsafe because it creates a hole at the given `hole_addr`.
+    /// This can cause undefined behavior if this address is invalid or if memory from the
+    /// `[hole_addr, hole_addr+size)` range is used somewhere else.
     ///
     /// The pointer to `hole_addr` is automatically aligned.
     pub unsafe fn new(hole_addr: *mut u8, hole_size: usize) -> HoleList {
@@ -314,6 +314,10 @@ impl HoleList {
     ///
     /// This function uses the “first fit” strategy, so it uses the first hole that is big
     /// enough. Thus the runtime is in O(n) but it should be reasonably fast for small allocations.
+    //
+    // NOTE: We could probably replace this with an `Option` instead of a `Result` in a later
+    // release to remove this clippy warning
+    #[allow(clippy::result_unit_err)]
     pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<(NonNull<u8>, Layout), ()> {
         let aligned_layout = Self::align_layout(layout);
         let mut cursor = self.cursor().ok_or(())?;
@@ -332,16 +336,18 @@ impl HoleList {
 
     /// Frees the allocation given by `ptr` and `layout`.
     ///
-    /// `ptr` must be a pointer returned by a call to the [`allocate_first_fit`] function with
-    /// identical layout. Undefined behavior may occur for invalid arguments.
-    /// The function performs exactly the same layout adjustments as [`allocate_first_fit`] and
-    /// returns the aligned layout.
-    ///
     /// This function walks the list and inserts the given block at the correct place. If the freed
     /// block is adjacent to another free block, the blocks are merged again.
     /// This operation is in `O(n)` since the list needs to be sorted by address.
     ///
     /// [`allocate_first_fit`]: HoleList::allocate_first_fit
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be a pointer returned by a call to the [`allocate_first_fit`] function with
+    /// identical layout. Undefined behavior may occur for invalid arguments.
+    /// The function performs exactly the same layout adjustments as [`allocate_first_fit`] and
+    /// returns the aligned layout.
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) -> Layout {
         let aligned_layout = Self::align_layout(layout);
         deallocate(self, ptr.as_ptr(), aligned_layout.size());
@@ -379,7 +385,11 @@ struct HoleInfo {
 
 unsafe fn make_hole(addr: *mut u8, size: usize) -> NonNull<Hole> {
     let hole_addr = addr.cast::<Hole>();
-    debug_assert_eq!(addr as usize % align_of::<Hole>(), 0);
+    debug_assert_eq!(
+        addr as usize % align_of::<Hole>(),
+        0,
+        "Hole address not aligned!",
+    );
     hole_addr.write(Hole { size, next: None });
     NonNull::new_unchecked(hole_addr)
 }
@@ -393,8 +403,11 @@ impl Cursor {
             let node_size = unsafe { node.as_ref().size };
             let hole_u8 = self.hole.as_ptr().cast::<u8>();
 
-            assert!(node_u8.wrapping_add(node_size) <= hole_u8);
-            assert_eq!(self.previous().size, 0);
+            assert!(
+                node_u8.wrapping_add(node_size) <= hole_u8,
+                "Freed node aliases existing hole! Bad free?",
+            );
+            debug_assert_eq!(self.previous().size, 0);
 
             let Cursor { mut prev, hole } = self;
             unsafe {
@@ -415,12 +428,18 @@ impl Cursor {
             let hole_size = self.current().size;
 
             // Does hole overlap node?
-            assert!(hole_u8.wrapping_add(hole_size) <= node_u8);
+            assert!(
+                hole_u8.wrapping_add(hole_size) <= node_u8,
+                "Freed node aliases existing hole! Bad free?",
+            );
 
             // If we have a next, does the node overlap next?
             if let Some(next) = self.current().next.as_ref() {
                 let node_u8 = node_u8 as *const u8;
-                assert!(node_u8.wrapping_add(node_size) <= next.as_ptr().cast::<u8>())
+                assert!(
+                    node_u8.wrapping_add(node_size) <= next.as_ptr().cast::<u8>(),
+                    "Freed node aliases existing hole! Bad free?",
+                );
             }
 
             // All good! Let's insert that after.
@@ -447,6 +466,11 @@ impl Cursor {
             };
 
             // Can we directly merge these? e.g. are they touching?
+            //
+            // NOTE: Because we always use `HoleList::align_layout`, the size of
+            // the new hole is always "rounded up" to cover any partial gaps that
+            // would have occurred. For this reason, we DON'T need to "round up"
+            // to account for an unaligned hole spot.
             let hole_u8 = hole.as_ptr().cast::<u8>();
             let hole_sz = unsafe { hole.as_ref().size };
             let next_u8 = next.as_ptr().cast::<u8>();
@@ -510,7 +534,9 @@ fn deallocate(list: &mut HoleList, addr: *mut u8, size: usize) {
         Err(mut cursor) => {
             // Nope. It lives somewhere else. Advance the list until we find its home
             while let Err(()) = cursor.try_insert_after(hole) {
-                cursor = cursor.next().unwrap();
+                cursor = cursor
+                    .next()
+                    .expect("Reached end of holes without finding deallocation hole!");
             }
             // Great! We found a home for it, our cursor is now JUST BEFORE the new
             // node we inserted, so we need to try to merge up to twice: One to combine

@@ -17,7 +17,7 @@ use core::alloc::GlobalAlloc;
 use core::alloc::Layout;
 #[cfg(feature = "alloc_ref")]
 use core::alloc::{AllocError, Allocator};
-use core::convert::{TryFrom, TryInto};
+use core::convert::TryInto;
 use core::mem::MaybeUninit;
 #[cfg(feature = "use_spin")]
 use core::ops::Deref;
@@ -64,10 +64,17 @@ impl Heap {
 
     /// Initializes an empty heap
     ///
-    /// # Unsafety
+    /// # Safety
     ///
     /// This function must be called at most once and must only be used on an
     /// empty heap.
+    ///
+    /// The bottom address must be valid and the memory in the
+    /// `[heap_bottom, heap_bottom + heap_size)` range must not be used for anything else.
+    /// This function is unsafe because it can cause undefined behavior if the given address
+    /// is invalid.
+    ///
+    /// The provided memory range must be valid for the `'static` lifetime.
     pub unsafe fn init(&mut self, heap_bottom: *mut u8, heap_size: usize) {
         self.bottom = heap_bottom;
         self.size = heap_size;
@@ -104,10 +111,16 @@ impl Heap {
         unsafe { self.init(address, size) }
     }
 
-    /// Creates a new heap with the given `bottom` and `size`. The bottom address must be valid
-    /// and the memory in the `[heap_bottom, heap_bottom + heap_size)` range must not be used for
-    /// anything else. This function is unsafe because it can cause undefined behavior if the
-    /// given address is invalid.
+    /// Creates a new heap with the given `bottom` and `size`.
+    ///
+    /// # Safety
+    ///
+    /// The bottom address must be valid and the memory in the
+    /// `[heap_bottom, heap_bottom + heap_size)` range must not be used for anything else.
+    /// This function is unsafe because it can cause undefined behavior if the given address
+    /// is invalid.
+    ///
+    /// The provided memory range must be valid for the `'static` lifetime.
     pub unsafe fn new(heap_bottom: *mut u8, heap_size: usize) -> Heap {
         if heap_size < HoleList::min_size() {
             Self::empty()
@@ -138,6 +151,10 @@ impl Heap {
     /// This function scans the list of free memory blocks and uses the first block that is big
     /// enough. The runtime is in O(n) where n is the number of free blocks, but it should be
     /// reasonably fast for small allocations.
+    //
+    // NOTE: We could probably replace this with an `Option` instead of a `Result` in a later
+    // release to remove this clippy warning
+    #[allow(clippy::result_unit_err)]
     pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<NonNull<u8>, ()> {
         match self.holes.allocate_first_fit(layout) {
             Ok((ptr, aligned_layout)) => {
@@ -149,12 +166,16 @@ impl Heap {
     }
 
     /// Frees the given allocation. `ptr` must be a pointer returned
-    /// by a call to the `allocate_first_fit` function with identical size and alignment. Undefined
-    /// behavior may occur for invalid arguments, thus this function is unsafe.
+    /// by a call to the `allocate_first_fit` function with identical size and alignment.
     ///
     /// This function walks the list of free memory blocks and inserts the freed block at the
     /// correct place. If the freed block is adjacent to another free block, the blocks are merged
     /// again. This operation is in `O(n)` since the list needs to be sorted by address.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be a pointer returned by a call to the [`allocate_first_fit`] function with
+    /// identical layout. Undefined behavior may occur for invalid arguments.
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) {
         self.used -= self.holes.deallocate(ptr, layout).size();
     }
@@ -171,8 +192,7 @@ impl Heap {
 
     /// Return the top address of the heap
     pub fn top(&self) -> *mut u8 {
-        self.bottom
-            .wrapping_offset(isize::try_from(self.size).unwrap())
+        self.bottom.wrapping_add(self.size)
     }
 
     /// Returns the size of the used part of the heap
@@ -187,9 +207,11 @@ impl Heap {
 
     /// Extends the size of the heap by creating a new hole at the end
     ///
-    /// # Unsafety
+    /// # Safety
     ///
-    /// The new extended area must be valid
+    /// The amount of data given in `by` MUST exist directly after the original
+    /// range of data provided when constructing the [Heap]. The additional data
+    /// must have the same lifetime of the original range of data.
     pub unsafe fn extend(&mut self, by: usize) {
         let top = self.top();
         let layout = Layout::from_size_align(by, 1).unwrap();
@@ -235,10 +257,16 @@ impl LockedHeap {
         LockedHeap(Spinlock::new(Heap::empty()))
     }
 
-    /// Creates a new heap with the given `bottom` and `size`. The bottom address must be valid
-    /// and the memory in the `[heap_bottom, heap_bottom + heap_size)` range must not be used for
-    /// anything else. This function is unsafe because it can cause undefined behavior if the
-    /// given address is invalid.
+    /// Creates a new heap with the given `bottom` and `size`.
+    ///
+    /// # Safety
+    ///
+    /// The bottom address must be valid and the memory in the
+    /// `[heap_bottom, heap_bottom + heap_size)` range must not be used for anything else.
+    /// This function is unsafe because it can cause undefined behavior if the given address
+    /// is invalid.
+    ///
+    /// The provided memory range must be valid for the `'static` lifetime.
     pub unsafe fn new(heap_bottom: *mut u8, heap_size: usize) -> LockedHeap {
         LockedHeap(Spinlock::new(Heap {
             bottom: heap_bottom,
