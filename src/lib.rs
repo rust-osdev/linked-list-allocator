@@ -45,7 +45,7 @@ impl Heap {
     #[cfg(not(feature = "const_mut_refs"))]
     pub fn empty() -> Heap {
         Heap {
-            bottom: 0,
+            bottom: core::ptr::null_mut(),
             size: 0,
             used: 0,
             holes: HoleList::empty(),
