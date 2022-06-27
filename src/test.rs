@@ -3,12 +3,26 @@ use core::alloc::Layout;
 use std::mem::{align_of, size_of, MaybeUninit};
 use std::prelude::v1::*;
 
+#[repr(align(128))]
+struct Chonk<const N: usize> {
+    data: [MaybeUninit<u8>; N],
+}
+
+impl<const N: usize> Chonk<N> {
+    pub fn new() -> Self {
+        Self {
+            data: [MaybeUninit::uninit(); N],
+        }
+    }
+}
+
 fn new_heap() -> Heap {
     const HEAP_SIZE: usize = 1000;
-    let heap_space = Box::leak(Box::new([MaybeUninit::uninit(); HEAP_SIZE]));
-    let assumed_location = heap_space.as_ptr() as usize;
+    let heap_space = Box::leak(Box::new(Chonk::<HEAP_SIZE>::new()));
+    let data = &mut heap_space.data;
+    let assumed_location = data.as_mut_ptr().cast();
 
-    let heap = Heap::from_slice(heap_space);
+    let heap = Heap::from_slice(data);
     assert!(heap.bottom == assumed_location);
     assert!(heap.size == HEAP_SIZE);
     heap
@@ -17,8 +31,9 @@ fn new_heap() -> Heap {
 fn new_max_heap() -> Heap {
     const HEAP_SIZE: usize = 1024;
     const HEAP_SIZE_MAX: usize = 2048;
-    let heap_space = Box::leak(Box::new([MaybeUninit::<u8>::uninit(); HEAP_SIZE_MAX]));
-    let start_ptr = heap_space.as_ptr() as usize;
+    let heap_space = Box::leak(Box::new(Chonk::<HEAP_SIZE_MAX>::new()));
+    let data = &mut heap_space.data;
+    let start_ptr = data.as_mut_ptr().cast();
 
     // Unsafe so that we have provenance over the whole allocation.
     let heap = unsafe { Heap::new(start_ptr, HEAP_SIZE) };
@@ -49,14 +64,17 @@ fn allocate_double_usize() {
     let layout = Layout::from_size_align(size, align_of::<usize>());
     let addr = heap.allocate_first_fit(layout.unwrap());
     assert!(addr.is_ok());
-    let addr = addr.unwrap().as_ptr() as usize;
+    let addr = addr.unwrap().as_ptr();
     assert!(addr == heap.bottom);
     let (hole_addr, hole_size) = heap.holes.first_hole().expect("ERROR: no hole left");
-    assert!(hole_addr == heap.bottom + size);
+    assert!(hole_addr == heap.bottom.wrapping_add(size));
     assert!(hole_size == heap.size - size);
 
     unsafe {
-        assert_eq!((*((addr + size) as *const Hole)).size, heap.size - size);
+        assert_eq!(
+            (*((addr.wrapping_offset(size.try_into().unwrap())) as *const Hole)).size,
+            heap.size - size
+        );
     }
 }
 
@@ -70,8 +88,10 @@ fn allocate_and_free_double_usize() {
         *(x.as_ptr() as *mut (usize, usize)) = (0xdeafdeadbeafbabe, 0xdeafdeadbeafbabe);
 
         heap.deallocate(x, layout.clone());
-        assert_eq!((*(heap.bottom as *const Hole)).size, heap.size);
-        assert!((*(heap.bottom as *const Hole)).next.is_none());
+        let real_first = heap.holes.first.next.as_ref().unwrap().as_ref();
+
+        assert_eq!(real_first.size, heap.size);
+        assert!(real_first.next.is_none());
     }
 }
 
@@ -188,6 +208,53 @@ fn allocate_multiple_sizes() {
         heap.deallocate(a, layout_4);
         heap.deallocate(b, layout_1);
     }
+}
+
+// This test makes sure that the heap works correctly when the input slice has
+// a variety of non-Hole aligned starting addresses
+#[test]
+fn allocate_multiple_unaligned() {
+    for offset in 0..=Layout::new::<Hole>().size() {
+        let mut heap = new_heap_skip(offset);
+        let base_size = size_of::<usize>();
+        let base_align = align_of::<usize>();
+
+        let layout_1 = Layout::from_size_align(base_size * 2, base_align).unwrap();
+        let layout_2 = Layout::from_size_align(base_size * 7, base_align).unwrap();
+        let layout_3 = Layout::from_size_align(base_size * 3, base_align * 4).unwrap();
+        let layout_4 = Layout::from_size_align(base_size * 4, base_align).unwrap();
+
+        let x = heap.allocate_first_fit(layout_1.clone()).unwrap();
+        let y = heap.allocate_first_fit(layout_2.clone()).unwrap();
+        assert_eq!(y.as_ptr() as usize, x.as_ptr() as usize + base_size * 2);
+        let z = heap.allocate_first_fit(layout_3.clone()).unwrap();
+        assert_eq!(z.as_ptr() as usize % (base_size * 4), 0);
+
+        unsafe {
+            heap.deallocate(x, layout_1.clone());
+        }
+
+        let a = heap.allocate_first_fit(layout_4.clone()).unwrap();
+        let b = heap.allocate_first_fit(layout_1.clone()).unwrap();
+        assert_eq!(b, x);
+
+        unsafe {
+            heap.deallocate(y, layout_2);
+            heap.deallocate(z, layout_3);
+            heap.deallocate(a, layout_4);
+            heap.deallocate(b, layout_1);
+        }
+    }
+}
+
+fn new_heap_skip(ct: usize) -> Heap {
+    const HEAP_SIZE: usize = 1000;
+    let heap_space = Box::leak(Box::new(Chonk::<HEAP_SIZE>::new()));
+    let data = &mut heap_space.data[ct..];
+    let heap = Heap::from_slice(data);
+    // assert!(heap.bottom == assumed_location);
+    // assert!(heap.size == HEAP_SIZE);
+    heap
 }
 
 #[test]
