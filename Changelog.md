@@ -1,7 +1,7 @@
 # Unreleased
 
 - Changed constructor to take `*mut u8` instead of `usize` ([#62])
-    - NOTE: Breaking API change - will require 0.10.0 release
+    - NOTE: Breaking API change
 - Reworked internals to pass Miri tests ([#62])
 
 [#62]: https://github.com/phil-opp/linked-list-allocator/pull/62
