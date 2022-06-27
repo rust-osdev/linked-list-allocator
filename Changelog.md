@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.10.0 – 2022-06-27
+
 - Changed constructor to take `*mut u8` instead of `usize` ([#62])
     - NOTE: Breaking API change
 - Reworked internals to pass Miri tests ([#62])
