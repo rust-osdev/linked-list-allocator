@@ -40,6 +40,8 @@ pub struct Heap {
     holes: HoleList,
 }
 
+unsafe impl Send for Heap {}
+
 impl Heap {
     /// Creates an empty heap. All allocate calls will return `None`.
     #[cfg(not(feature = "const_mut_refs"))]
