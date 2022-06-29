@@ -151,9 +151,10 @@ fn deallocate_middle() {
         heap.deallocate(z, layout.clone());
         assert_eq!((*(x.as_ptr() as *const Hole)).size, size);
         assert_eq!((*(z.as_ptr() as *const Hole)).size, size);
-        heap.deallocate(y, layout.clone());
-        assert_eq!((*(x.as_ptr() as *const Hole)).size, size * 3);
         heap.deallocate(a, layout.clone());
+        assert_eq!((*(x.as_ptr() as *const Hole)).size, size);
+        assert_eq!((*(z.as_ptr() as *const Hole)).size, heap.size - 2 * size);
+        heap.deallocate(y, layout.clone());
         assert_eq!((*(x.as_ptr() as *const Hole)).size, heap.size);
     }
 }

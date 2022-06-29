@@ -435,6 +435,11 @@ impl Cursor {
 
             // If we have a next, does the node overlap next?
             if let Some(next) = self.current().next.as_ref() {
+                if next < &node {
+                    // advance the list more
+                    return Err(());
+                }
+
                 let node_u8 = node_u8 as *const u8;
                 assert!(
                     node_u8.wrapping_add(node_size) <= next.as_ptr().cast::<u8>(),
