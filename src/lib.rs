@@ -17,7 +17,6 @@ use core::alloc::GlobalAlloc;
 use core::alloc::Layout;
 #[cfg(feature = "alloc_ref")]
 use core::alloc::{AllocError, Allocator};
-use core::convert::TryInto;
 use core::mem::MaybeUninit;
 #[cfg(feature = "use_spin")]
 use core::ops::Deref;
@@ -34,8 +33,6 @@ mod test;
 
 /// A fixed size heap backed by a linked list of free memory blocks.
 pub struct Heap {
-    bottom: *mut u8,
-    size: usize,
     used: usize,
     holes: HoleList,
 }
@@ -47,8 +44,6 @@ impl Heap {
     #[cfg(not(feature = "const_mut_refs"))]
     pub fn empty() -> Heap {
         Heap {
-            bottom: core::ptr::null_mut(),
-            size: 0,
             used: 0,
             holes: HoleList::empty(),
         }
@@ -57,8 +52,6 @@ impl Heap {
     #[cfg(feature = "const_mut_refs")]
     pub const fn empty() -> Heap {
         Heap {
-            bottom: core::ptr::null_mut(),
-            size: 0,
             used: 0,
             holes: HoleList::empty(),
         }
@@ -78,8 +71,6 @@ impl Heap {
     ///
     /// The provided memory range must be valid for the `'static` lifetime.
     pub unsafe fn init(&mut self, heap_bottom: *mut u8, heap_size: usize) {
-        self.bottom = heap_bottom;
-        self.size = heap_size;
         self.used = 0;
         self.holes = HoleList::new(heap_bottom, heap_size);
     }
@@ -100,7 +91,7 @@ impl Heap {
     /// This method panics if the heap is already initialized.
     pub fn init_from_slice(&mut self, mem: &'static mut [MaybeUninit<u8>]) {
         assert!(
-            self.bottom.is_null(),
+            self.bottom().is_null(),
             "The heap has already been initialized."
         );
         let size = mem.len();
@@ -128,8 +119,6 @@ impl Heap {
             Self::empty()
         } else {
             Heap {
-                bottom: heap_bottom,
-                size: heap_size,
                 used: 0,
                 holes: HoleList::new(heap_bottom, heap_size),
             }
@@ -184,17 +173,17 @@ impl Heap {
 
     /// Returns the bottom address of the heap.
     pub fn bottom(&self) -> *mut u8 {
-        self.bottom
+        self.holes.bottom
     }
 
     /// Returns the size of the heap.
     pub fn size(&self) -> usize {
-        self.size
+        (self.top() as usize) - (self.bottom() as usize)
     }
 
     /// Return the top address of the heap
     pub fn top(&self) -> *mut u8 {
-        self.bottom.wrapping_add(self.size)
+        self.holes.top
     }
 
     /// Returns the size of the used part of the heap
@@ -204,7 +193,7 @@ impl Heap {
 
     /// Returns the size of the free part of the heap
     pub fn free(&self) -> usize {
-        self.size - self.used
+        self.size() - self.used
     }
 
     /// Extends the size of the heap by creating a new hole at the end
@@ -219,7 +208,7 @@ impl Heap {
         let layout = Layout::from_size_align(by, 1).unwrap();
         self.holes
             .deallocate(NonNull::new_unchecked(top as *mut u8), layout);
-        self.size += by;
+        self.holes.top = self.holes.top.add(by);
     }
 }
 
@@ -271,8 +260,6 @@ impl LockedHeap {
     /// The provided memory range must be valid for the `'static` lifetime.
     pub unsafe fn new(heap_bottom: *mut u8, heap_size: usize) -> LockedHeap {
         LockedHeap(Spinlock::new(Heap {
-            bottom: heap_bottom,
-            size: heap_size,
             used: 0,
             holes: HoleList::new(heap_bottom, heap_size),
         }))
@@ -325,5 +312,5 @@ pub fn align_up_size(size: usize, align: usize) -> usize {
 /// so that x >= addr. The alignment must be a power of 2.
 pub fn align_up(addr: *mut u8, align: usize) -> *mut u8 {
     let offset = addr.align_offset(align);
-    addr.wrapping_offset(offset.try_into().unwrap())
+    addr.wrapping_add(offset)
 }
