@@ -226,7 +226,6 @@ fn check_merge_top(mut node: NonNull<Hole>, top: *mut u8) {
     let node_sz = unsafe { node.as_ref().size };
 
     // If this is the last node, we need to see if we need to merge to the end
-    // TODO(AJM): We MIGHT need this for merging ALL holes.
     let end = node_u8.wrapping_add(node_sz);
     let hole_layout = Layout::new::<Hole>();
     if end < top {
