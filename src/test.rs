@@ -193,11 +193,7 @@ fn allocate_many_size_aligns() {
     #[cfg(miri)]
     const ALIGN: Range<usize> = 1..4;
 
-    #[cfg(not(miri))]
     const STRATS: Range<usize> = 0..4;
-
-    #[cfg(miri)]
-    const STRATS: Range<usize> = 0..2;
 
     let mut heap = new_heap();
     assert_eq!(heap.size(), 1000);
@@ -217,22 +213,29 @@ fn allocate_many_size_aligns() {
         layout: Layout,
     }
 
+    // NOTE: Printing to the console SIGNIFICANTLY slows down miri.
+
     for strat in STRATS {
         for align in ALIGN {
             for size in SIZE {
-                println!("=========================================================");
-                println!("Align: {}", 1 << align);
-                println!("Size:  {}", size);
-                println!("Free Pattern: {}/0..4", strat);
-                println!();
+                #[cfg(not(miri))]
+                {
+                    println!("=========================================================");
+                    println!("Align: {}", 1 << align);
+                    println!("Size:  {}", size);
+                    println!("Free Pattern: {}/0..4", strat);
+                    println!();
+                }
                 let mut allocs = vec![];
 
                 let layout = Layout::from_size_align(size, 1 << align).unwrap();
                 while let Ok(alloc) = heap.allocate_first_fit(layout) {
+                    #[cfg(not(miri))]
                     heap.holes.debug();
                     allocs.push(Alloc { alloc, layout });
                 }
 
+                #[cfg(not(miri))]
                 println!("Allocs: {} - {} bytes", allocs.len(), allocs.len() * size);
 
                 match strat {
@@ -240,6 +243,7 @@ fn allocate_many_size_aligns() {
                         // Forward
                         allocs.drain(..).for_each(|a| unsafe {
                             heap.deallocate(a.alloc, a.layout);
+                            #[cfg(not(miri))]
                             heap.holes.debug();
                         });
                     }
@@ -247,6 +251,7 @@ fn allocate_many_size_aligns() {
                         // Backwards
                         allocs.drain(..).rev().for_each(|a| unsafe {
                             heap.deallocate(a.alloc, a.layout);
+                            #[cfg(not(miri))]
                             heap.holes.debug();
                         });
                     }
@@ -263,10 +268,12 @@ fn allocate_many_size_aligns() {
                         }
                         a.drain(..).for_each(|a| unsafe {
                             heap.deallocate(a.alloc, a.layout);
+                            #[cfg(not(miri))]
                             heap.holes.debug();
                         });
                         b.drain(..).for_each(|a| unsafe {
                             heap.deallocate(a.alloc, a.layout);
+                            #[cfg(not(miri))]
                             heap.holes.debug();
                         });
                     }
@@ -283,22 +290,27 @@ fn allocate_many_size_aligns() {
                         }
                         a.drain(..).for_each(|a| unsafe {
                             heap.deallocate(a.alloc, a.layout);
+                            #[cfg(not(miri))]
                             heap.holes.debug();
                         });
                         b.drain(..).for_each(|a| unsafe {
                             heap.deallocate(a.alloc, a.layout);
+                            #[cfg(not(miri))]
                             heap.holes.debug();
                         });
                     }
                     _ => panic!(),
                 }
 
+                #[cfg(not(miri))]
                 println!("MAX CHECK");
 
                 let full = heap.allocate_first_fit(max_alloc).unwrap();
                 unsafe {
                     heap.deallocate(full, max_alloc);
                 }
+
+                #[cfg(not(miri))]
                 println!();
             }
         }
