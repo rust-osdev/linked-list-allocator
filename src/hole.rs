@@ -1,7 +1,7 @@
 use core::alloc::Layout;
-use core::convert::TryInto;
 use core::mem;
 use core::mem::{align_of, size_of};
+use core::ptr::null_mut;
 use core::ptr::NonNull;
 
 use crate::align_up_size;
@@ -11,11 +11,27 @@ use super::align_up;
 /// A sorted list of holes. It uses the the holes itself to store its nodes.
 pub struct HoleList {
     pub(crate) first: Hole, // dummy
+    pub(crate) bottom: *mut u8,
+    pub(crate) top: *mut u8,
 }
 
 pub(crate) struct Cursor {
     prev: NonNull<Hole>,
     hole: NonNull<Hole>,
+    top: *mut u8,
+}
+
+/// A block containing free memory. It points to the next hole and thus forms a linked list.
+pub(crate) struct Hole {
+    pub size: usize,
+    pub next: Option<NonNull<Hole>>,
+}
+
+/// Basic information about a hole.
+#[derive(Debug, Clone, Copy)]
+struct HoleInfo {
+    addr: *mut u8,
+    size: usize,
 }
 
 impl Cursor {
@@ -24,6 +40,7 @@ impl Cursor {
             self.hole.as_mut().next.map(|nhole| Cursor {
                 prev: self.hole,
                 hole: nhole,
+                top: self.top,
             })
         }
     }
@@ -133,7 +150,9 @@ impl Cursor {
         ////////////////////////////////////////////////////////////////////////////
         // This is where we actually perform surgery on the linked list.
         ////////////////////////////////////////////////////////////////////////////
-        let Cursor { mut prev, mut hole } = self;
+        let Cursor {
+            mut prev, mut hole, ..
+        } = self;
         // Remove the current location from the previous node
         unsafe {
             prev.as_mut().next = None;
@@ -200,6 +219,41 @@ impl Cursor {
     }
 }
 
+// See if we can extend this hole towards the end of the allocation region
+// If so: increase the size of the node. If no: keep the node as-is
+fn check_merge_top(mut node: NonNull<Hole>, top: *mut u8) {
+    let node_u8 = node.as_ptr().cast::<u8>();
+    let node_sz = unsafe { node.as_ref().size };
+
+    // If this is the last node, we need to see if we need to merge to the end
+    let end = node_u8.wrapping_add(node_sz);
+    let hole_layout = Layout::new::<Hole>();
+    if end < top {
+        let next_hole_end = align_up(end, hole_layout.align()).wrapping_add(hole_layout.size());
+
+        if next_hole_end > top {
+            let offset = (top as usize) - (end as usize);
+            unsafe {
+                node.as_mut().size += offset;
+            }
+        }
+    }
+}
+
+// See if we can scoot this hole back to the bottom of the allocation region
+// If so: create and return the new hole. If not: return the existing hole
+fn check_merge_bottom(node: NonNull<Hole>, bottom: *mut u8) -> NonNull<Hole> {
+    debug_assert_eq!(bottom as usize % align_of::<Hole>(), 0);
+
+    if bottom.wrapping_add(core::mem::size_of::<Hole>()) > node.as_ptr().cast::<u8>() {
+        let offset = (node.as_ptr() as usize) - (bottom as usize);
+        let size = unsafe { node.as_ref() }.size + offset;
+        unsafe { make_hole(bottom, size) }
+    } else {
+        node
+    }
+}
+
 impl HoleList {
     /// Creates an empty `HoleList`.
     #[cfg(not(feature = "const_mut_refs"))]
@@ -209,6 +263,8 @@ impl HoleList {
                 size: 0,
                 next: None,
             },
+            bottom: null_mut(),
+            top: null_mut(),
         }
     }
 
@@ -220,6 +276,8 @@ impl HoleList {
                 size: 0,
                 next: None,
             },
+            bottom: null_mut(),
+            top: null_mut(),
         }
     }
 
@@ -228,6 +286,7 @@ impl HoleList {
             Some(Cursor {
                 hole,
                 prev: NonNull::new(&mut self.first)?,
+                top: self.top,
             })
         } else {
             None
@@ -274,8 +333,7 @@ impl HoleList {
         let aligned_hole_addr = align_up(hole_addr, align_of::<Hole>());
         let ptr = aligned_hole_addr as *mut Hole;
         ptr.write(Hole {
-            size: hole_size
-                .saturating_sub(aligned_hole_addr.offset_from(hole_addr).try_into().unwrap()),
+            size: hole_size - ((aligned_hole_addr as usize) - (hole_addr as usize)),
             next: None,
         });
 
@@ -284,6 +342,8 @@ impl HoleList {
                 size: 0,
                 next: Some(NonNull::new_unchecked(ptr)),
             },
+            bottom: aligned_hole_addr,
+            top: hole_addr.wrapping_add(hole_size),
         }
     }
 
@@ -370,19 +430,6 @@ impl HoleList {
     }
 }
 
-/// A block containing free memory. It points to the next hole and thus forms a linked list.
-pub(crate) struct Hole {
-    pub size: usize,
-    pub next: Option<NonNull<Hole>>,
-}
-
-/// Basic information about a hole.
-#[derive(Debug, Clone, Copy)]
-struct HoleInfo {
-    addr: *mut u8,
-    size: usize,
-}
-
 unsafe fn make_hole(addr: *mut u8, size: usize) -> NonNull<Hole> {
     let hole_addr = addr.cast::<Hole>();
     debug_assert_eq!(
@@ -395,7 +442,7 @@ unsafe fn make_hole(addr: *mut u8, size: usize) -> NonNull<Hole> {
 }
 
 impl Cursor {
-    fn try_insert_back(self, mut node: NonNull<Hole>) -> Result<Self, Self> {
+    fn try_insert_back(self, node: NonNull<Hole>, bottom: *mut u8) -> Result<Self, Self> {
         // Covers the case where the new hole exists BEFORE the current pointer,
         // which only happens when previous is the stub pointer
         if node < self.hole {
@@ -409,59 +456,86 @@ impl Cursor {
             );
             debug_assert_eq!(self.previous().size, 0);
 
-            let Cursor { mut prev, hole } = self;
+            let Cursor {
+                mut prev,
+                hole,
+                top,
+            } = self;
             unsafe {
+                let mut node = check_merge_bottom(node, bottom);
                 prev.as_mut().next = Some(node);
                 node.as_mut().next = Some(hole);
             }
-            Ok(Cursor { prev, hole: node })
+            Ok(Cursor {
+                prev,
+                hole: node,
+                top,
+            })
         } else {
             Err(self)
         }
     }
 
     fn try_insert_after(&mut self, mut node: NonNull<Hole>) -> Result<(), ()> {
-        if self.hole < node {
-            let node_u8 = node.as_ptr().cast::<u8>();
-            let node_size = unsafe { node.as_ref().size };
-            let hole_u8 = self.hole.as_ptr().cast::<u8>();
-            let hole_size = self.current().size;
+        let node_u8 = node.as_ptr().cast::<u8>();
+        let node_size = unsafe { node.as_ref().size };
 
-            // Does hole overlap node?
-            assert!(
-                hole_u8.wrapping_add(hole_size) <= node_u8,
-                "Freed node aliases existing hole! Bad free?",
-            );
-
-            // If we have a next, does the node overlap next?
-            if let Some(next) = self.current().next.as_ref() {
+        // If we have a next, does the node overlap next?
+        if let Some(next) = self.current().next.as_ref() {
+            if node < *next {
                 let node_u8 = node_u8 as *const u8;
                 assert!(
                     node_u8.wrapping_add(node_size) <= next.as_ptr().cast::<u8>(),
                     "Freed node aliases existing hole! Bad free?",
                 );
+            } else {
+                // The new hole isn't between current and next.
+                return Err(());
             }
-
-            // All good! Let's insert that after.
-            unsafe {
-                let maybe_next = self.hole.as_mut().next.replace(node);
-                node.as_mut().next = maybe_next;
-            }
-            Ok(())
-        } else {
-            Err(())
         }
+
+        // At this point, we either have no "next" pointer, or the hole is
+        // between current and "next". The following assert can only trigger
+        // if we've gotten our list out of order.
+        debug_assert!(self.hole < node, "Hole list out of order?");
+
+        let hole_u8 = self.hole.as_ptr().cast::<u8>();
+        let hole_size = self.current().size;
+
+        // Does hole overlap node?
+        assert!(
+            hole_u8.wrapping_add(hole_size) <= node_u8,
+            "Freed node aliases existing hole! Bad free?",
+        );
+
+        // All good! Let's insert that after.
+        unsafe {
+            let maybe_next = self.hole.as_mut().next.replace(node);
+            node.as_mut().next = maybe_next;
+        }
+
+        Ok(())
     }
 
     // Merge the current node with up to n following nodes
     fn try_merge_next_n(self, max: usize) {
-        let Cursor { prev: _, mut hole } = self;
+        let Cursor {
+            prev: _,
+            mut hole,
+            top,
+            ..
+        } = self;
 
         for _ in 0..max {
             // Is there a next node?
             let mut next = if let Some(next) = unsafe { hole.as_mut() }.next.as_ref() {
                 *next
             } else {
+                // Since there is no NEXT node, we need to check whether the current
+                // hole SHOULD extend to the end, but doesn't. This would happen when
+                // there isn't enough remaining space to place a hole after the current
+                // node's placement.
+                check_merge_top(hole, top);
                 return;
             };
 
@@ -515,7 +589,10 @@ fn deallocate(list: &mut HoleList, addr: *mut u8, size: usize) {
         cursor
     } else {
         // Oh hey, there are no "real" holes at all. That means this just
-        // becomes the only "real" hole!
+        // becomes the only "real" hole! Check if this is touching the end
+        // or the beginning of the allocation range
+        let hole = check_merge_bottom(hole, list.bottom);
+        check_merge_top(hole, list.top);
         list.first.next = Some(hole);
         return;
     };
@@ -525,7 +602,7 @@ fn deallocate(list: &mut HoleList, addr: *mut u8, size: usize) {
     // previous location the cursor was pointing to.
     //
     // Otherwise, our cursor will point at the current non-"dummy" head of the list
-    let (cursor, n) = match cursor.try_insert_back(hole) {
+    let (cursor, n) = match cursor.try_insert_back(hole, list.bottom) {
         Ok(cursor) => {
             // Yup! It lives at the front of the list. Hooray! Attempt to merge
             // it with just ONE next node, since it is at the front of the list
@@ -578,8 +655,8 @@ pub mod test {
         let assumed_location = data.as_mut_ptr().cast();
 
         let heap = Heap::from_slice(data);
-        assert!(heap.bottom == assumed_location);
-        assert!(heap.size == HEAP_SIZE);
+        assert!(heap.bottom() == assumed_location);
+        assert!(heap.size() == HEAP_SIZE);
         heap
     }
 

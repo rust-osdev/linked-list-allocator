@@ -1,5 +1,9 @@
 # Unreleased
 
+- Fixed logic for freeing nodes ([#64])
+
+[#64]: https://github.com/rust-osdev/linked-list-allocator/pull/64
+
 # 0.10.0 – 2022-06-27
 
 - Changed constructor to take `*mut u8` instead of `usize` ([#62])

@@ -23,8 +23,8 @@ fn new_heap() -> Heap {
     let assumed_location = data.as_mut_ptr().cast();
 
     let heap = Heap::from_slice(data);
-    assert!(heap.bottom == assumed_location);
-    assert!(heap.size == HEAP_SIZE);
+    assert!(heap.bottom() == assumed_location);
+    assert!(heap.size() == HEAP_SIZE);
     heap
 }
 
@@ -37,8 +37,8 @@ fn new_max_heap() -> Heap {
 
     // Unsafe so that we have provenance over the whole allocation.
     let heap = unsafe { Heap::new(start_ptr, HEAP_SIZE) };
-    assert!(heap.bottom == start_ptr);
-    assert!(heap.size == HEAP_SIZE);
+    assert!(heap.bottom() == start_ptr);
+    assert!(heap.size() == HEAP_SIZE);
     heap
 }
 
@@ -65,15 +65,15 @@ fn allocate_double_usize() {
     let addr = heap.allocate_first_fit(layout.unwrap());
     assert!(addr.is_ok());
     let addr = addr.unwrap().as_ptr();
-    assert!(addr == heap.bottom);
+    assert!(addr == heap.bottom());
     let (hole_addr, hole_size) = heap.holes.first_hole().expect("ERROR: no hole left");
-    assert!(hole_addr == heap.bottom.wrapping_add(size));
-    assert!(hole_size == heap.size - size);
+    assert!(hole_addr == heap.bottom().wrapping_add(size));
+    assert!(hole_size == heap.size() - size);
 
     unsafe {
         assert_eq!(
-            (*((addr.wrapping_offset(size.try_into().unwrap())) as *const Hole)).size,
-            heap.size - size
+            (*((addr.wrapping_add(size)) as *const Hole)).size,
+            heap.size() - size
         );
     }
 }
@@ -90,7 +90,7 @@ fn allocate_and_free_double_usize() {
         heap.deallocate(x, layout.clone());
         let real_first = heap.holes.first.next.as_ref().unwrap().as_ref();
 
-        assert_eq!(real_first.size, heap.size);
+        assert_eq!(real_first.size, heap.size());
         assert!(real_first.next.is_none());
     }
 }
@@ -110,7 +110,7 @@ fn deallocate_right_before() {
         heap.deallocate(x, layout.clone());
         assert_eq!((*(x.as_ptr() as *const Hole)).size, layout.size() * 2);
         heap.deallocate(z, layout.clone());
-        assert_eq!((*(x.as_ptr() as *const Hole)).size, heap.size);
+        assert_eq!((*(x.as_ptr() as *const Hole)).size, heap.size());
     }
 }
 
@@ -130,7 +130,7 @@ fn deallocate_right_behind() {
         heap.deallocate(y, layout.clone());
         assert_eq!((*(x.as_ptr() as *const Hole)).size, size * 2);
         heap.deallocate(z, layout.clone());
-        assert_eq!((*(x.as_ptr() as *const Hole)).size, heap.size);
+        assert_eq!((*(x.as_ptr() as *const Hole)).size, heap.size());
     }
 }
 
@@ -154,7 +154,7 @@ fn deallocate_middle() {
         heap.deallocate(y, layout.clone());
         assert_eq!((*(x.as_ptr() as *const Hole)).size, size * 3);
         heap.deallocate(a, layout.clone());
-        assert_eq!((*(x.as_ptr() as *const Hole)).size, heap.size);
+        assert_eq!((*(x.as_ptr() as *const Hole)).size, heap.size());
     }
 }
 
@@ -175,6 +175,146 @@ fn reallocate_double_usize() {
     }
 
     assert_eq!(x, y);
+}
+
+#[test]
+fn allocate_many_size_aligns() {
+    use core::ops::{Range, RangeInclusive};
+
+    #[cfg(not(miri))]
+    const SIZE: RangeInclusive<usize> = 1..=512;
+
+    #[cfg(miri)]
+    const SIZE: RangeInclusive<usize> = 256..=(256 + core::mem::size_of::<crate::hole::Hole>());
+
+    #[cfg(not(miri))]
+    const ALIGN: Range<usize> = 0..10;
+
+    #[cfg(miri)]
+    const ALIGN: Range<usize> = 1..4;
+
+    const STRATS: Range<usize> = 0..4;
+
+    let mut heap = new_heap();
+    assert_eq!(heap.size(), 1000);
+
+    heap.holes.debug();
+
+    let max_alloc = Layout::from_size_align(1000, 1).unwrap();
+    let full = heap.allocate_first_fit(max_alloc).unwrap();
+    unsafe {
+        heap.deallocate(full, max_alloc);
+    }
+
+    heap.holes.debug();
+
+    struct Alloc {
+        alloc: NonNull<u8>,
+        layout: Layout,
+    }
+
+    // NOTE: Printing to the console SIGNIFICANTLY slows down miri.
+
+    for strat in STRATS {
+        for align in ALIGN {
+            for size in SIZE {
+                #[cfg(not(miri))]
+                {
+                    println!("=========================================================");
+                    println!("Align: {}", 1 << align);
+                    println!("Size:  {}", size);
+                    println!("Free Pattern: {}/0..4", strat);
+                    println!();
+                }
+                let mut allocs = vec![];
+
+                let layout = Layout::from_size_align(size, 1 << align).unwrap();
+                while let Ok(alloc) = heap.allocate_first_fit(layout) {
+                    #[cfg(not(miri))]
+                    heap.holes.debug();
+                    allocs.push(Alloc { alloc, layout });
+                }
+
+                #[cfg(not(miri))]
+                println!("Allocs: {} - {} bytes", allocs.len(), allocs.len() * size);
+
+                match strat {
+                    0 => {
+                        // Forward
+                        allocs.drain(..).for_each(|a| unsafe {
+                            heap.deallocate(a.alloc, a.layout);
+                            #[cfg(not(miri))]
+                            heap.holes.debug();
+                        });
+                    }
+                    1 => {
+                        // Backwards
+                        allocs.drain(..).rev().for_each(|a| unsafe {
+                            heap.deallocate(a.alloc, a.layout);
+                            #[cfg(not(miri))]
+                            heap.holes.debug();
+                        });
+                    }
+                    2 => {
+                        // Interleaved forwards
+                        let mut a = Vec::new();
+                        let mut b = Vec::new();
+                        for (i, alloc) in allocs.drain(..).enumerate() {
+                            if (i % 2) == 0 {
+                                a.push(alloc);
+                            } else {
+                                b.push(alloc);
+                            }
+                        }
+                        a.drain(..).for_each(|a| unsafe {
+                            heap.deallocate(a.alloc, a.layout);
+                            #[cfg(not(miri))]
+                            heap.holes.debug();
+                        });
+                        b.drain(..).for_each(|a| unsafe {
+                            heap.deallocate(a.alloc, a.layout);
+                            #[cfg(not(miri))]
+                            heap.holes.debug();
+                        });
+                    }
+                    3 => {
+                        // Interleaved backwards
+                        let mut a = Vec::new();
+                        let mut b = Vec::new();
+                        for (i, alloc) in allocs.drain(..).rev().enumerate() {
+                            if (i % 2) == 0 {
+                                a.push(alloc);
+                            } else {
+                                b.push(alloc);
+                            }
+                        }
+                        a.drain(..).for_each(|a| unsafe {
+                            heap.deallocate(a.alloc, a.layout);
+                            #[cfg(not(miri))]
+                            heap.holes.debug();
+                        });
+                        b.drain(..).for_each(|a| unsafe {
+                            heap.deallocate(a.alloc, a.layout);
+                            #[cfg(not(miri))]
+                            heap.holes.debug();
+                        });
+                    }
+                    _ => panic!(),
+                }
+
+                #[cfg(not(miri))]
+                println!("MAX CHECK");
+
+                let full = heap.allocate_first_fit(max_alloc).unwrap();
+                unsafe {
+                    heap.deallocate(full, max_alloc);
+                }
+
+                #[cfg(not(miri))]
+                println!();
+            }
+        }
+    }
 }
 
 #[test]
@@ -252,8 +392,6 @@ fn new_heap_skip(ct: usize) -> Heap {
     let heap_space = Box::leak(Box::new(Chonk::<HEAP_SIZE>::new()));
     let data = &mut heap_space.data[ct..];
     let heap = Heap::from_slice(data);
-    // assert!(heap.bottom == assumed_location);
-    // assert!(heap.size == HEAP_SIZE);
     heap
 }
 
