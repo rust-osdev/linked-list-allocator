@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.10.1 – 2022-07-07
+
 - Fixed logic for freeing nodes ([#64])
 
 [#64]: https://github.com/rust-osdev/linked-list-allocator/pull/64
