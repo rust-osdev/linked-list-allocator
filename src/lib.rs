@@ -115,13 +115,9 @@ impl Heap {
     ///
     /// The provided memory range must be valid for the `'static` lifetime.
     pub unsafe fn new(heap_bottom: *mut u8, heap_size: usize) -> Heap {
-        if heap_size < HoleList::min_size() {
-            Self::empty()
-        } else {
-            Heap {
-                used: 0,
-                holes: HoleList::new(heap_bottom, heap_size),
-            }
+        Heap {
+            used: 0,
+            holes: HoleList::new(heap_bottom, heap_size),
         }
     }
 
