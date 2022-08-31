@@ -495,3 +495,54 @@ fn extend_fragmented_heap() {
     // Try to allocate there
     assert!(heap.allocate_first_fit(layout_2.clone()).is_ok());
 }
+
+/// Ensures that `Heap::extend` fails for very small sizes.
+///
+/// The size needs to be big enough to hold a hole, otherwise
+/// the hole write would result in an out of bounds write.
+#[test]
+fn small_heap_extension() {
+    static mut HEAP: [u8; 33] = [0; 33];
+    let result = unsafe {
+        let mut heap = Heap::new(HEAP.as_mut_ptr(), 32);
+        heap.try_extend(1)
+    };
+    assert_eq!(result, Err(ExtendError::SizeTooSmall))
+}
+
+/// Ensures that `Heap::extend` fails for sizes that are not a multiple of the hole size.
+#[test]
+fn oddly_sized_heap_extension() {
+    static mut HEAP: [u8; 33] = [0; 33];
+    let result = unsafe {
+        let mut heap = Heap::new(HEAP.as_mut_ptr(), 16);
+        heap.try_extend(17)
+    };
+    assert_eq!(result, Err(ExtendError::OddSize))
+}
+
+/// Ensures that heap extension fails when trying to extend an empty heap.
+///
+/// Empty heaps always have a start pointer of 0.
+#[test]
+fn extend_empty() {
+    let result = unsafe {
+        let mut heap = Heap::empty();
+        heap.try_extend(16)
+    };
+    assert_eq!(result, Err(ExtendError::EmptyHeap))
+}
+
+/// Ensures that heap extension fails when trying to extend an oddly-sized heap.
+///
+/// To extend the heap, we need to place a hole at the old top of the heap. This
+/// only works if the top pointer is sufficiently aligned.
+#[test]
+fn extend_odd_size() {
+    static mut HEAP: [u8; 33] = [0; 33];
+    let result = unsafe {
+        let mut heap = Heap::new(HEAP.as_mut_ptr(), 17);
+        heap.try_extend(16)
+    };
+    assert_eq!(result, Err(ExtendError::OddHeapSize))
+}
