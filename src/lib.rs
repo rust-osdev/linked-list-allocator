@@ -196,7 +196,9 @@ impl Heap {
         self.size() - self.used
     }
 
-    /// Extends the size of the heap by creating a new hole at the end
+    /// Extends the size of the heap by creating a new hole at the end.
+    ///
+    /// Panics when the heap extension fails. Use [`try_extend`] to handle potential errors.
     ///
     /// # Safety
     ///
@@ -204,11 +206,45 @@ impl Heap {
     /// range of data provided when constructing the [Heap]. The additional data
     /// must have the same lifetime of the original range of data.
     pub unsafe fn extend(&mut self, by: usize) {
-        let top = self.top();
-        let layout = Layout::from_size_align(by, 1).unwrap();
-        self.holes
-            .deallocate(NonNull::new_unchecked(top as *mut u8), layout);
-        self.holes.top = self.holes.top.add(by);
+        self.holes.try_extend(by).expect("heap extension failed");
+    }
+
+    /// Tries to extend the size of the heap by creating a new hole at the end.
+    ///
+    /// # Safety
+    ///
+    /// The amount of data given in `by` MUST exist directly after the original
+    /// range of data provided when constructing the [Heap]. The additional data
+    /// must have the same lifetime of the original range of data.
+    pub unsafe fn try_extend(&mut self, by: usize) -> Result<(), ExtendError> {
+        self.holes.try_extend(by)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ExtendError {
+    /// The given extension size was not large enough to store the necessary metadata.
+    SizeTooSmall,
+    /// The given extension size was must be a multiple of 16.
+    OddSize,
+    /// The heap size must be a multiple of 16, otherwise extension is not possible.
+    OddHeapSize,
+    /// Extending an empty heap is not possible.
+    EmptyHeap,
+}
+
+impl core::fmt::Display for ExtendError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            ExtendError::SizeTooSmall => {
+                "heap extension size was not large enough to store the necessary metadata"
+            }
+            ExtendError::OddSize => "heap extension size is not a multiple of 16",
+            ExtendError::OddHeapSize => {
+                "heap extension not possible because heap size is not a multiple of 16"
+            }
+            ExtendError::EmptyHeap => "tried to extend an emtpy heap",
+        })
     }
 }
 

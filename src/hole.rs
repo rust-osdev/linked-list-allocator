@@ -4,7 +4,7 @@ use core::mem::{align_of, size_of};
 use core::ptr::null_mut;
 use core::ptr::NonNull;
 
-use crate::align_up_size;
+use crate::{align_up_size, ExtendError};
 
 use super::align_up;
 
@@ -427,6 +427,32 @@ impl HoleList {
                 hole.as_ref().size
             })
         })
+    }
+
+    pub(crate) unsafe fn try_extend(&mut self, by: usize) -> Result<(), ExtendError> {
+        if by < Self::min_size() {
+            return Err(ExtendError::SizeTooSmall);
+        }
+        let layout = Layout::from_size_align(by, 1).unwrap();
+        let aligned = Self::align_layout(layout);
+        if aligned != layout {
+            return Err(ExtendError::OddSize);
+        }
+
+        let top = self.top;
+        if top.is_null() {
+            return Err(ExtendError::EmptyHeap);
+        }
+
+        let aligned_top = align_up(top, align_of::<Hole>());
+        if aligned_top != top {
+            return Err(ExtendError::OddHeapSize);
+        }
+
+        self.deallocate(NonNull::new_unchecked(top as *mut u8), layout);
+        self.top = top.add(by);
+
+        Ok(())
     }
 }
 
