@@ -656,10 +656,9 @@ fn deallocate(list: &mut HoleList, addr: *mut u8, size: usize) {
 
 #[cfg(test)]
 pub mod test {
+    use super::HoleList;
     use crate::Heap;
-    use core::alloc::Layout;
-    use std::mem::MaybeUninit;
-    use std::prelude::v1::*;
+    use std::{alloc::Layout, convert::TryInto, mem::MaybeUninit, prelude::v1::*, ptr::NonNull};
 
     #[repr(align(128))]
     struct Chonk<const N: usize> {
@@ -703,5 +702,71 @@ pub mod test {
         let mut heap = new_heap();
         let reqd = Layout::from_size_align(256, 1).unwrap();
         let _ = heap.allocate_first_fit(reqd).unwrap();
+    }
+
+    /// Tests `HoleList::new` with the minimal allowed `hole_size`.
+    #[test]
+    fn hole_list_new_min_size() {
+        // define an array of `u64` instead of `u8` for alignment
+        static mut HEAP: [u64; 2] = [0; 2];
+        let heap =
+            unsafe { HoleList::new(HEAP.as_mut_ptr().cast(), 2 * core::mem::size_of::<usize>()) };
+        assert_eq!(heap.bottom.cast(), unsafe { HEAP.as_mut_ptr() });
+        assert_eq!(heap.top.cast(), unsafe { HEAP.as_mut_ptr().add(2) });
+        assert_eq!(heap.first.size, 0); // dummy
+        assert_eq!(
+            heap.first.next,
+            Some(NonNull::new(heap.bottom.cast())).unwrap()
+        );
+        assert_eq!(
+            unsafe { &*(heap.first.next.unwrap().as_ptr()) }.size,
+            2 * core::mem::size_of::<usize>()
+        );
+        assert_eq!(unsafe { &*(heap.first.next.unwrap().as_ptr()) }.next, None);
+    }
+
+    /// Tests that `HoleList::new` aligns the `hole_addr` correctly and adjusts the size
+    /// accordingly.
+    #[test]
+    fn hole_list_new_align() {
+        // define an array of `u64` instead of `u8` for alignment
+        static mut HEAP: [u64; 3] = [0; 3];
+
+        let heap_start: *mut u8 = unsafe { HEAP.as_mut_ptr().add(1) }.cast();
+        // initialize the HoleList with a hole_addr one byte before `heap_start`
+        // -> the function should align it up to `heap_start`
+        let heap =
+            unsafe { HoleList::new(heap_start.sub(1), 2 * core::mem::size_of::<usize>() + 1) };
+        assert_eq!(heap.bottom, heap_start);
+        assert_eq!(heap.top.cast(), unsafe {
+            // one byte less than the `hole_size` given to `new` because of alignment
+            heap_start.add(2 * core::mem::size_of::<usize>())
+        });
+
+        assert_eq!(heap.first.size, 0); // dummy
+        assert_eq!(
+            heap.first.next,
+            Some(NonNull::new(heap.bottom.cast())).unwrap()
+        );
+        assert_eq!(
+            unsafe { &*(heap.first.next.unwrap().as_ptr()) }.size,
+            unsafe { heap.top.offset_from(heap.bottom) }
+                .try_into()
+                .unwrap()
+        );
+        assert_eq!(unsafe { &*(heap.first.next.unwrap().as_ptr()) }.next, None);
+    }
+
+    #[test]
+    #[should_panic]
+    fn hole_list_new_too_small() {
+        // define an array of `u64` instead of `u8` for alignment
+        static mut HEAP: [u64; 3] = [0; 3];
+
+        let heap_start: *mut u8 = unsafe { HEAP.as_mut_ptr().add(1) }.cast();
+        // initialize the HoleList with a hole_addr one byte before `heap_start`
+        // -> the function should align it up to `heap_start`, but then the
+        // available size is too small to store a hole -> it should panic
+        unsafe { HoleList::new(heap_start.sub(1), 2 * core::mem::size_of::<usize>()) };
     }
 }
