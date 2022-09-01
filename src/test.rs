@@ -502,9 +502,10 @@ fn extend_fragmented_heap() {
 /// the hole write would result in an out of bounds write.
 #[test]
 fn small_heap_extension() {
-    static mut HEAP: [u8; 33] = [0; 33];
+    // define an array of `u64` instead of `u8` for alignment
+    static mut HEAP: [u64; 5] = [0; 5];
     let result = unsafe {
-        let mut heap = Heap::new(HEAP.as_mut_ptr(), 32);
+        let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 32);
         heap.try_extend(1)
     };
     assert_eq!(result, Err(ExtendError::SizeTooSmall))
@@ -513,9 +514,10 @@ fn small_heap_extension() {
 /// Ensures that `Heap::extend` fails for sizes that are not a multiple of the hole size.
 #[test]
 fn oddly_sized_heap_extension() {
-    static mut HEAP: [u8; 33] = [0; 33];
+    // define an array of `u64` instead of `u8` for alignment
+    static mut HEAP: [u64; 5] = [0; 5];
     let result = unsafe {
-        let mut heap = Heap::new(HEAP.as_mut_ptr(), 16);
+        let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 16);
         heap.try_extend(17)
     };
     assert_eq!(result, Err(ExtendError::OddSize))
@@ -539,9 +541,10 @@ fn extend_empty() {
 /// only works if the top pointer is sufficiently aligned.
 #[test]
 fn extend_odd_size() {
-    static mut HEAP: [u8; 33] = [0; 33];
+    // define an array of `u64` instead of `u8` for alignment
+    static mut HEAP: [u64; 5] = [0; 5];
     let result = unsafe {
-        let mut heap = Heap::new(HEAP.as_mut_ptr(), 17);
+        let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 17);
         heap.try_extend(16)
     };
     assert_eq!(result, Err(ExtendError::OddHeapSize))
