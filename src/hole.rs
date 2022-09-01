@@ -329,14 +329,22 @@ impl HoleList {
     /// The pointer to `hole_addr` is automatically aligned.
     pub unsafe fn new(hole_addr: *mut u8, hole_size: usize) -> HoleList {
         assert_eq!(size_of::<Hole>(), Self::min_size());
+        assert!(hole_size >= size_of::<Hole>());
 
         let aligned_hole_addr = align_up(hole_addr, align_of::<Hole>());
+        let aligned_hole_size = hole_size - ((aligned_hole_addr as usize) - (hole_addr as usize));
+        assert!(aligned_hole_size >= size_of::<Hole>());
+
         let ptr = aligned_hole_addr as *mut Hole;
         ptr.write(Hole {
-            size: hole_size - ((aligned_hole_addr as usize) - (hole_addr as usize)),
+            size: aligned_hole_size,
             next: None,
         });
 
+        assert_eq!(
+            hole_addr.wrapping_add(hole_size),
+            aligned_hole_addr.wrapping_add(aligned_hole_size)
+        );
         HoleList {
             first: Hole {
                 size: 0,
