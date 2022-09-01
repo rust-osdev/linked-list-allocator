@@ -296,7 +296,7 @@ impl HoleList {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, fuzzing))]
     #[allow(dead_code)]
     pub(crate) fn debug(&mut self) {
         if let Some(cursor) = self.cursor() {
