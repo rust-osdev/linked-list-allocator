@@ -320,13 +320,19 @@ impl HoleList {
 
     /// Creates a `HoleList` that contains the given hole.
     ///
+    /// The `hole_addr` pointer is automatically aligned, so the `bottom`
+    /// field might be larger than the given `hole_addr`.
+    ///
+    /// The given `hole_size` must be large enough to store the required
+    /// metadata, otherwise this function will panic. Depending on the
+    /// alignment of the `hole_addr` pointer, the minimum size is between
+    /// `2 * size_of::<usize>` and `3 * size_of::<usize>`.
+    ///
     /// # Safety
     ///
     /// This function is unsafe because it creates a hole at the given `hole_addr`.
     /// This can cause undefined behavior if this address is invalid or if memory from the
     /// `[hole_addr, hole_addr+size)` range is used somewhere else.
-    ///
-    /// The pointer to `hole_addr` is automatically aligned.
     pub unsafe fn new(hole_addr: *mut u8, hole_size: usize) -> HoleList {
         assert_eq!(size_of::<Hole>(), Self::min_size());
         assert!(hole_size >= size_of::<Hole>());

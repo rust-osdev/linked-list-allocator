@@ -59,6 +59,14 @@ impl Heap {
 
     /// Initializes an empty heap
     ///
+    /// The `heap_bottom` pointer is automatically aligned, so the [`bottom()`][Self::bottom]
+    /// method might return a pointer that is larger than `heap_bottom` after construction.
+    ///
+    /// The given `heap_size` must be large enough to store the required
+    /// metadata, otherwise this function will panic. Depending on the
+    /// alignment of the `hole_addr` pointer, the minimum size is between
+    /// `2 * size_of::<usize>` and `3 * size_of::<usize>`.
+    ///
     /// # Safety
     ///
     /// This function must be called at most once and must only be used on an
@@ -82,13 +90,17 @@ impl Heap {
     /// program's memory, from a mutable static, or by allocating and leaking such memory from
     /// another allocator.
     ///
-    /// The latter method may be especially useful if the underlying allocator does not perform
+    /// The latter approach may be especially useful if the underlying allocator does not perform
     /// deallocation (e.g. a simple bump allocator). Then the overlaid linked-list-allocator can
     /// provide memory reclamation.
     ///
     /// # Panics
     ///
     /// This method panics if the heap is already initialized.
+    ///
+    /// It also panics when the length of the given `mem` slice is not large enough to
+    /// store the required metadata. Depending on the alignment of the slice, the minimum
+    /// size is between `2 * size_of::<usize>` and `3 * size_of::<usize>`.
     pub fn init_from_slice(&mut self, mem: &'static mut [MaybeUninit<u8>]) {
         assert!(
             self.bottom().is_null(),
@@ -105,6 +117,14 @@ impl Heap {
     }
 
     /// Creates a new heap with the given `bottom` and `size`.
+    ///
+    /// The `heap_bottom` pointer is automatically aligned, so the [`bottom()`][Self::bottom]
+    /// method might return a pointer that is larger than `heap_bottom` after construction.
+    ///
+    /// The given `heap_size` must be large enough to store the required
+    /// metadata, otherwise this function will panic. Depending on the
+    /// alignment of the `hole_addr` pointer, the minimum size is between
+    /// `2 * size_of::<usize>` and `3 * size_of::<usize>`.
     ///
     /// # Safety
     ///
@@ -123,8 +143,9 @@ impl Heap {
 
     /// Creates a new heap from a slice of raw memory.
     ///
-    /// This has the same effect as [`init_from_slice`] on an empty heap, but it is combined into a
-    /// single operation that can not panic.
+    /// This is a convenience function that has the same effect as calling
+    /// [`init_from_slice`] on an empty heap. All the requirements of `init_from_slice`
+    /// apply to this function as well.
     pub fn from_slice(mem: &'static mut [MaybeUninit<u8>]) -> Heap {
         let size = mem.len();
         let address = mem.as_mut_ptr().cast();
@@ -168,6 +189,9 @@ impl Heap {
     }
 
     /// Returns the bottom address of the heap.
+    ///
+    /// The bottom pointer is automatically aligned, so the returned pointer
+    /// might be larger than the bottom pointer used for initialization.
     pub fn bottom(&self) -> *mut u8 {
         self.holes.bottom
     }
@@ -281,6 +305,14 @@ impl LockedHeap {
     }
 
     /// Creates a new heap with the given `bottom` and `size`.
+    ///
+    /// The `heap_bottom` pointer is automatically aligned, so the [`bottom()`][Heap::bottom]
+    /// method might return a pointer that is larger than `heap_bottom` after construction.
+    ///
+    /// The given `heap_size` must be large enough to store the required
+    /// metadata, otherwise this function will panic. Depending on the
+    /// alignment of the `hole_addr` pointer, the minimum size is between
+    /// `2 * size_of::<usize>` and `3 * size_of::<usize>`.
     ///
     /// # Safety
     ///
