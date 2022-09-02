@@ -443,28 +443,49 @@ impl HoleList {
         })
     }
 
-    pub(crate) unsafe fn try_extend(&mut self, by: usize) -> Result<(), ExtendError> {
-        if by < Self::min_size() {
-            return Err(ExtendError::SizeTooSmall);
-        }
-        let layout = Layout::from_size_align(by, 1).unwrap();
-        let aligned = Self::align_layout(layout);
-        if aligned != layout {
-            return Err(ExtendError::OddSize);
-        }
+    // amount previously extended but not big enough to be claimed by a Hole yet
+    pub(crate) fn pending_extend(&self) -> usize {
+        // this field is not used by anything else
+        self.first.size
+    }
 
+    pub(crate) unsafe fn try_extend(&mut self, by: usize) -> Result<(), ExtendError> {
         let top = self.top;
         if top.is_null() {
-            return Err(ExtendError::EmptyHeap);
+            // this is the only case where I don't think will need to make/init a new heap...
+            // since we can't do that from here, maybe we just add this to the
+            // documentation to not call .extend() on uninitialized Heaps
+            unreachable!();
+        }
+
+        // join this extend request with any pending (but not yet acted on) extensions
+        let by = self.pending_extend() + by;
+
+        let dead_space = top.align_offset(align_of::<Hole>());
+        let minimum_extend = dead_space + Self::min_size();
+
+        if by < minimum_extend {
+            self.first.size = by;
+
+            #[cfg(test)]
+            println!("pending extend size: {} bytes", self.pending_extend());
+
+            return Ok(());
+        }
+
+        #[cfg(test)]
+        if dead_space > 0 {
+            println!("dead space created during extend: {} bytes", dead_space);
         }
 
         let aligned_top = align_up(top, align_of::<Hole>());
-        if aligned_top != top {
-            return Err(ExtendError::OddHeapSize);
-        }
+        let layout = Layout::from_size_align(by - dead_space, 1).unwrap();
 
-        self.deallocate(NonNull::new_unchecked(top as *mut u8), layout);
+        self.deallocate(NonNull::new_unchecked(aligned_top as *mut u8), layout);
         self.top = top.add(by);
+
+        // reset pending resizes
+        self.first.size = 0;
 
         Ok(())
     }

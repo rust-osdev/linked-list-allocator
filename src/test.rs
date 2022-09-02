@@ -504,11 +504,11 @@ fn extend_fragmented_heap() {
 fn small_heap_extension() {
     // define an array of `u64` instead of `u8` for alignment
     static mut HEAP: [u64; 5] = [0; 5];
-    let result = unsafe {
+    unsafe {
         let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 32);
-        heap.try_extend(1)
-    };
-    assert_eq!(result, Err(ExtendError::SizeTooSmall))
+        heap.extend(1);
+        assert_eq!(1, heap.holes.pending_extend());
+    }
 }
 
 /// Ensures that `Heap::extend` fails for sizes that are not a multiple of the hole size.
@@ -516,23 +516,24 @@ fn small_heap_extension() {
 fn oddly_sized_heap_extension() {
     // define an array of `u64` instead of `u8` for alignment
     static mut HEAP: [u64; 5] = [0; 5];
-    let result = unsafe {
+    unsafe {
         let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 16);
-        heap.try_extend(17)
-    };
-    assert_eq!(result, Err(ExtendError::OddSize))
+        heap.extend(17);
+        assert_eq!(0, heap.holes.pending_extend());
+        assert_eq!(16 + 17, heap.size());
+    }
 }
 
 /// Ensures that heap extension fails when trying to extend an empty heap.
 ///
 /// Empty heaps always have a start pointer of 0.
 #[test]
+#[should_panic]
 fn extend_empty() {
-    let result = unsafe {
+    unsafe {
         let mut heap = Heap::empty();
-        heap.try_extend(16)
-    };
-    assert_eq!(result, Err(ExtendError::EmptyHeap))
+        heap.extend(16);
+    }
 }
 
 /// Ensures that heap extension fails when trying to extend an oddly-sized heap.
@@ -543,9 +544,12 @@ fn extend_empty() {
 fn extend_odd_size() {
     // define an array of `u64` instead of `u8` for alignment
     static mut HEAP: [u64; 5] = [0; 5];
-    let result = unsafe {
+    unsafe {
         let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 17);
-        heap.try_extend(16)
-    };
-    assert_eq!(result, Err(ExtendError::OddHeapSize))
+        heap.extend(16);
+        assert_eq!(16, heap.holes.pending_extend());
+        heap.extend(15);
+        assert_eq!(0, heap.holes.pending_extend());
+        assert_eq!(17 + 16 + 15, heap.size());
+    }
 }
