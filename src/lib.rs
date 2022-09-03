@@ -67,6 +67,11 @@ impl Heap {
     /// alignment of the `hole_addr` pointer, the minimum size is between
     /// `2 * size_of::<usize>` and `3 * size_of::<usize>`.
     ///
+    /// The usable size for allocations will be truncated to the nearest
+    /// alignment of `align_of::<usize>`. Any extra bytes left at the end
+    /// will be reclaimed once sufficient additional space is given to
+    /// [`extend`][Heap::extend].
+    ///
     /// # Safety
     ///
     /// This function must be called at most once and must only be used on an
@@ -93,6 +98,11 @@ impl Heap {
     /// The latter approach may be especially useful if the underlying allocator does not perform
     /// deallocation (e.g. a simple bump allocator). Then the overlaid linked-list-allocator can
     /// provide memory reclamation.
+    ///
+    /// The usable size for allocations will be truncated to the nearest
+    /// alignment of `align_of::<usize>`. Any extra bytes left at the end
+    /// will be reclaimed once sufficient additional space is given to
+    /// [`extend`][Heap::extend].
     ///
     /// # Panics
     ///
@@ -125,6 +135,11 @@ impl Heap {
     /// metadata, otherwise this function will panic. Depending on the
     /// alignment of the `hole_addr` pointer, the minimum size is between
     /// `2 * size_of::<usize>` and `3 * size_of::<usize>`.
+    ///
+    /// The usable size for allocations will be truncated to the nearest
+    /// alignment of `align_of::<usize>`. Any extra bytes left at the end
+    /// will be reclaimed once sufficient additional space is given to
+    /// [`extend`][Heap::extend].
     ///
     /// # Safety
     ///
@@ -197,13 +212,21 @@ impl Heap {
     }
 
     /// Returns the size of the heap.
+    ///
+    /// This is the size the heap is using for allocations, not necessarily the
+    /// total amount of bytes given to the heap. To determine the exact memory
+    /// boundaries, use [`bottom`][Self::bottom] and [`top`][Self::top].
     pub fn size(&self) -> usize {
-        (self.top() as usize) - (self.bottom() as usize)
+        unsafe { self.holes.top.offset_from(self.holes.bottom) as usize }
     }
 
-    /// Return the top address of the heap
+    /// Return the top address of the heap.
+    ///
+    /// Note: The heap may choose to not use bytes at the end for allocations
+    /// until there is enough room for metadata, but it still retains ownership
+    /// over memory from [`bottom`][Self::bottom] to the address returned.
     pub fn top(&self) -> *mut u8 {
-        self.holes.top
+        unsafe { self.holes.top.add(self.holes.pending_extend as usize) }
     }
 
     /// Returns the size of the used part of the heap
@@ -218,53 +241,24 @@ impl Heap {
 
     /// Extends the size of the heap by creating a new hole at the end.
     ///
-    /// Panics when the heap extension fails. Use [`try_extend`] to handle potential errors.
+    /// Small extensions are not guaranteed to grow the usable size of
+    /// the heap. In order to grow the Heap most effectively, extend by
+    /// at least `2 * size_of::<usize>`, keeping the amount a multiple of
+    /// `size_of::<usize>`.
     ///
     /// # Safety
     ///
     /// The amount of data given in `by` MUST exist directly after the original
     /// range of data provided when constructing the [Heap]. The additional data
     /// must have the same lifetime of the original range of data.
+    ///
+    /// Even if this operation doesn't increase the [usable size][`Self::size`]
+    /// by exactly `by` bytes, those bytes are still owned by the Heap for
+    /// later use.
+    ///
+    /// Calling this method on an uninitialized Heap is undefined behavior.
     pub unsafe fn extend(&mut self, by: usize) {
-        self.holes.try_extend(by).expect("heap extension failed");
-    }
-
-    /// Tries to extend the size of the heap by creating a new hole at the end.
-    ///
-    /// # Safety
-    ///
-    /// The amount of data given in `by` MUST exist directly after the original
-    /// range of data provided when constructing the [Heap]. The additional data
-    /// must have the same lifetime of the original range of data.
-    pub unsafe fn try_extend(&mut self, by: usize) -> Result<(), ExtendError> {
-        self.holes.try_extend(by)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum ExtendError {
-    /// The given extension size was not large enough to store the necessary metadata.
-    SizeTooSmall,
-    /// The given extension size was must be a multiple of 16.
-    OddSize,
-    /// The heap size must be a multiple of 16, otherwise extension is not possible.
-    OddHeapSize,
-    /// Extending an empty heap is not possible.
-    EmptyHeap,
-}
-
-impl core::fmt::Display for ExtendError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(match self {
-            ExtendError::SizeTooSmall => {
-                "heap extension size was not large enough to store the necessary metadata"
-            }
-            ExtendError::OddSize => "heap extension size is not a multiple of 16",
-            ExtendError::OddHeapSize => {
-                "heap extension not possible because heap size is not a multiple of 16"
-            }
-            ExtendError::EmptyHeap => "tried to extend an emtpy heap",
-        })
+        self.holes.extend(by);
     }
 }
 

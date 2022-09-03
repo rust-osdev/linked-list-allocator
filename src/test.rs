@@ -23,8 +23,8 @@ fn new_heap() -> Heap {
     let assumed_location = data.as_mut_ptr().cast();
 
     let heap = Heap::from_slice(data);
-    assert!(heap.bottom() == assumed_location);
-    assert!(heap.size() == HEAP_SIZE);
+    assert_eq!(heap.bottom(), assumed_location);
+    assert_eq!(heap.size(), align_down_size(HEAP_SIZE, size_of::<usize>()));
     heap
 }
 
@@ -37,8 +37,8 @@ fn new_max_heap() -> Heap {
 
     // Unsafe so that we have provenance over the whole allocation.
     let heap = unsafe { Heap::new(start_ptr, HEAP_SIZE) };
-    assert!(heap.bottom() == start_ptr);
-    assert!(heap.size() == HEAP_SIZE);
+    assert_eq!(heap.bottom(), start_ptr);
+    assert_eq!(heap.size(), HEAP_SIZE);
     heap
 }
 
@@ -196,11 +196,12 @@ fn allocate_many_size_aligns() {
     const STRATS: Range<usize> = 0..4;
 
     let mut heap = new_heap();
-    assert_eq!(heap.size(), 1000);
+    let aligned_heap_size = align_down_size(1000, size_of::<usize>());
+    assert_eq!(heap.size(), aligned_heap_size);
 
     heap.holes.debug();
 
-    let max_alloc = Layout::from_size_align(1000, 1).unwrap();
+    let max_alloc = Layout::from_size_align(aligned_heap_size, 1).unwrap();
     let full = heap.allocate_first_fit(max_alloc).unwrap();
     unsafe {
         heap.deallocate(full, max_alloc);
@@ -507,7 +508,7 @@ fn small_heap_extension() {
     unsafe {
         let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 32);
         heap.extend(1);
-        assert_eq!(1, heap.holes.pending_extend());
+        assert_eq!(1, heap.holes.pending_extend);
     }
 }
 
@@ -519,20 +520,8 @@ fn oddly_sized_heap_extension() {
     unsafe {
         let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 16);
         heap.extend(17);
-        assert_eq!(0, heap.holes.pending_extend());
-        assert_eq!(16 + 17, heap.size());
-    }
-}
-
-/// Ensures that heap extension fails when trying to extend an empty heap.
-///
-/// Empty heaps always have a start pointer of 0.
-#[test]
-#[should_panic]
-fn extend_empty() {
-    unsafe {
-        let mut heap = Heap::empty();
-        heap.extend(16);
+        assert_eq!(1, heap.holes.pending_extend);
+        assert_eq!(16 + 16, heap.size());
     }
 }
 
@@ -546,10 +535,11 @@ fn extend_odd_size() {
     static mut HEAP: [u64; 5] = [0; 5];
     unsafe {
         let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 17);
+        assert_eq!(1, heap.holes.pending_extend);
         heap.extend(16);
-        assert_eq!(16, heap.holes.pending_extend());
+        assert_eq!(1, heap.holes.pending_extend);
         heap.extend(15);
-        assert_eq!(0, heap.holes.pending_extend());
+        assert_eq!(0, heap.holes.pending_extend);
         assert_eq!(17 + 16 + 15, heap.size());
     }
 }
