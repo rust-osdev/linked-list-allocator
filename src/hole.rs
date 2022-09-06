@@ -266,6 +266,7 @@ impl HoleList {
             },
             bottom: null_mut(),
             top: null_mut(),
+            pending_extend: 0,
         }
     }
 
