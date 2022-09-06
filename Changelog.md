@@ -1,5 +1,8 @@
 # Unreleased
 
+- Fix build on stable by adding missing field in `HoleList` initializer ([#68](https://github.com/rust-osdev/linked-list-allocator/pull/68))
+  - Fixes a bug introduced in `v0.10.2`.
+
 # 0.10.2 – 2022-09-06
 
 Fix for potential out-of-bound writes that were possible on `Heap` initialization and `Heap::extend`. See the [security advisory](https://github.com/rust-osdev/linked-list-allocator/security/advisories/GHSA-xg8p-34w2-j49j) for details. The issues were fixed in the following way:
