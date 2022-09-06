@@ -753,17 +753,18 @@ pub mod test {
     fn hole_list_new_min_size() {
         // define an array of `u64` instead of `u8` for alignment
         static mut HEAP: [u64; 2] = [0; 2];
+        let heap_start = unsafe { HEAP.as_ptr() as usize };
         let heap =
             unsafe { HoleList::new(HEAP.as_mut_ptr().cast(), 2 * core::mem::size_of::<usize>()) };
-        assert_eq!(heap.bottom.cast(), unsafe { HEAP.as_mut_ptr() });
-        assert_eq!(heap.top.cast(), unsafe { HEAP.as_mut_ptr().add(2) });
+        assert_eq!(heap.bottom as usize, heap_start);
+        assert_eq!(heap.top as usize, heap_start + 2 * size_of::<usize>());
         assert_eq!(heap.first.size, 0); // dummy
         assert_eq!(
             heap.first.next,
             Some(NonNull::new(heap.bottom.cast())).unwrap()
         );
         assert_eq!(
-            unsafe { &*(heap.first.next.unwrap().as_ptr()) }.size,
+            unsafe { heap.first.next.as_ref().unwrap().as_ref() }.size,
             2 * core::mem::size_of::<usize>()
         );
         assert_eq!(unsafe { &*(heap.first.next.unwrap().as_ptr()) }.next, None);

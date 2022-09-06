@@ -532,7 +532,7 @@ fn oddly_sized_heap_extension() {
 #[test]
 fn extend_odd_size() {
     // define an array of `u64` instead of `u8` for alignment
-    static mut HEAP: [u64; 5] = [0; 5];
+    static mut HEAP: [u64; 6] = [0; 6];
     unsafe {
         let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 17);
         assert_eq!(1, heap.holes.pending_extend);
