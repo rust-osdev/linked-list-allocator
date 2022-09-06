@@ -4,7 +4,7 @@ use core::mem::{align_of, size_of};
 use core::ptr::null_mut;
 use core::ptr::NonNull;
 
-use crate::align_up_size;
+use crate::{align_down_size, align_up_size};
 
 use super::align_up;
 
@@ -13,6 +13,7 @@ pub struct HoleList {
     pub(crate) first: Hole, // dummy
     pub(crate) bottom: *mut u8,
     pub(crate) top: *mut u8,
+    pub(crate) pending_extend: u8,
 }
 
 pub(crate) struct Cursor {
@@ -278,6 +279,7 @@ impl HoleList {
             },
             bottom: null_mut(),
             top: null_mut(),
+            pending_extend: 0,
         }
     }
 
@@ -320,22 +322,43 @@ impl HoleList {
 
     /// Creates a `HoleList` that contains the given hole.
     ///
+    /// The `hole_addr` pointer is automatically aligned, so the `bottom`
+    /// field might be larger than the given `hole_addr`.
+    ///
+    /// The given `hole_size` must be large enough to store the required
+    /// metadata, otherwise this function will panic. Depending on the
+    /// alignment of the `hole_addr` pointer, the minimum size is between
+    /// `2 * size_of::<usize>` and `3 * size_of::<usize>`.
+    ///
+    /// The usable size for allocations will be truncated to the nearest
+    /// alignment of `align_of::<usize>`. Any extra bytes left at the end
+    /// will be reclaimed once sufficient additional space is given to
+    /// [`extend`][crate::Heap::extend].
+    ///
     /// # Safety
     ///
     /// This function is unsafe because it creates a hole at the given `hole_addr`.
     /// This can cause undefined behavior if this address is invalid or if memory from the
     /// `[hole_addr, hole_addr+size)` range is used somewhere else.
-    ///
-    /// The pointer to `hole_addr` is automatically aligned.
     pub unsafe fn new(hole_addr: *mut u8, hole_size: usize) -> HoleList {
         assert_eq!(size_of::<Hole>(), Self::min_size());
+        assert!(hole_size >= size_of::<Hole>());
 
         let aligned_hole_addr = align_up(hole_addr, align_of::<Hole>());
+        let requested_hole_size = hole_size - ((aligned_hole_addr as usize) - (hole_addr as usize));
+        let aligned_hole_size = align_down_size(requested_hole_size, align_of::<Hole>());
+        assert!(aligned_hole_size >= size_of::<Hole>());
+
         let ptr = aligned_hole_addr as *mut Hole;
         ptr.write(Hole {
-            size: hole_size - ((aligned_hole_addr as usize) - (hole_addr as usize)),
+            size: aligned_hole_size,
             next: None,
         });
+
+        assert_eq!(
+            hole_addr.wrapping_add(hole_size),
+            aligned_hole_addr.wrapping_add(requested_hole_size)
+        );
 
         HoleList {
             first: Hole {
@@ -343,7 +366,8 @@ impl HoleList {
                 next: Some(NonNull::new_unchecked(ptr)),
             },
             bottom: aligned_hole_addr,
-            top: hole_addr.wrapping_add(hole_size),
+            top: aligned_hole_addr.wrapping_add(aligned_hole_size),
+            pending_extend: (requested_hole_size - aligned_hole_size) as u8,
         }
     }
 
@@ -428,6 +452,44 @@ impl HoleList {
             })
         })
     }
+
+    pub(crate) unsafe fn extend(&mut self, by: usize) {
+        assert!(!self.top.is_null(), "tried to extend an empty heap");
+
+        let top = self.top;
+
+        let dead_space = top.align_offset(align_of::<Hole>());
+        debug_assert_eq!(
+            0, dead_space,
+            "dead space detected during extend: {} bytes. This means top was unaligned",
+            dead_space
+        );
+
+        debug_assert!(
+            (self.pending_extend as usize) < Self::min_size(),
+            "pending extend was larger than expected"
+        );
+
+        // join this extend request with any pending (but not yet acted on) extension
+        let extend_by = self.pending_extend as usize + by;
+
+        let minimum_extend = Self::min_size();
+        if extend_by < minimum_extend {
+            self.pending_extend = extend_by as u8;
+            return;
+        }
+
+        // only extend up to another valid boundary
+        let new_hole_size = align_down_size(extend_by, align_of::<Hole>());
+        let layout = Layout::from_size_align(new_hole_size, 1).unwrap();
+
+        // instantiate the hole by forcing a deallocation on the new memory
+        self.deallocate(NonNull::new_unchecked(top as *mut u8), layout);
+        self.top = top.add(new_hole_size);
+
+        // save extra bytes given to extend that weren't aligned to the hole size
+        self.pending_extend = (extend_by - new_hole_size) as u8;
+    }
 }
 
 unsafe fn make_hole(addr: *mut u8, size: usize) -> NonNull<Hole> {
@@ -505,7 +567,10 @@ impl Cursor {
         // Does hole overlap node?
         assert!(
             hole_u8.wrapping_add(hole_size) <= node_u8,
-            "Freed node aliases existing hole! Bad free?",
+            "Freed node ({:?}) aliases existing hole ({:?}[{}])! Bad free?",
+            node_u8,
+            hole_u8,
+            hole_size,
         );
 
         // All good! Let's insert that after.
@@ -630,10 +695,10 @@ fn deallocate(list: &mut HoleList, addr: *mut u8, size: usize) {
 
 #[cfg(test)]
 pub mod test {
-    use crate::Heap;
-    use core::alloc::Layout;
-    use std::mem::MaybeUninit;
-    use std::prelude::v1::*;
+    use super::HoleList;
+    use crate::{align_down_size, Heap};
+    use core::mem::size_of;
+    use std::{alloc::Layout, convert::TryInto, mem::MaybeUninit, prelude::v1::*, ptr::NonNull};
 
     #[repr(align(128))]
     struct Chonk<const N: usize> {
@@ -655,8 +720,8 @@ pub mod test {
         let assumed_location = data.as_mut_ptr().cast();
 
         let heap = Heap::from_slice(data);
-        assert!(heap.bottom() == assumed_location);
-        assert!(heap.size() == HEAP_SIZE);
+        assert_eq!(heap.bottom(), assumed_location);
+        assert_eq!(heap.size(), align_down_size(HEAP_SIZE, size_of::<usize>()));
         heap
     }
 
@@ -667,7 +732,10 @@ pub mod test {
         // This is the "dummy" node
         assert_eq!(curs.previous().size, 0);
         // This is the "full" heap
-        assert_eq!(curs.current().size, 1000);
+        assert_eq!(
+            curs.current().size,
+            align_down_size(1000, size_of::<usize>())
+        );
         // There is no other hole
         assert!(curs.next().is_none());
     }
@@ -677,5 +745,77 @@ pub mod test {
         let mut heap = new_heap();
         let reqd = Layout::from_size_align(256, 1).unwrap();
         let _ = heap.allocate_first_fit(reqd).unwrap();
+    }
+
+    /// Tests `HoleList::new` with the minimal allowed `hole_size`.
+    #[test]
+    fn hole_list_new_min_size() {
+        // define an array of `u64` instead of `u8` for alignment
+        static mut HEAP: [u64; 2] = [0; 2];
+        let heap =
+            unsafe { HoleList::new(HEAP.as_mut_ptr().cast(), 2 * core::mem::size_of::<usize>()) };
+        assert_eq!(heap.bottom.cast(), unsafe { HEAP.as_mut_ptr() });
+        assert_eq!(heap.top.cast(), unsafe { HEAP.as_mut_ptr().add(2) });
+        assert_eq!(heap.first.size, 0); // dummy
+        assert_eq!(
+            heap.first.next,
+            Some(NonNull::new(heap.bottom.cast())).unwrap()
+        );
+        assert_eq!(
+            unsafe { &*(heap.first.next.unwrap().as_ptr()) }.size,
+            2 * core::mem::size_of::<usize>()
+        );
+        assert_eq!(unsafe { &*(heap.first.next.unwrap().as_ptr()) }.next, None);
+    }
+
+    /// Tests that `HoleList::new` aligns the `hole_addr` correctly and adjusts the size
+    /// accordingly.
+    #[test]
+    fn hole_list_new_align() {
+        // define an array of `u64` instead of `u8` for alignment
+        static mut HEAP: [u64; 3] = [0; 3];
+
+        let heap_start: *mut u8 = unsafe { HEAP.as_mut_ptr().add(1) }.cast();
+        // initialize the HoleList with a hole_addr one byte before `heap_start`
+        // -> the function should align it up to `heap_start`
+        let heap =
+            unsafe { HoleList::new(heap_start.sub(1), 2 * core::mem::size_of::<usize>() + 1) };
+        assert_eq!(heap.bottom, heap_start);
+        assert_eq!(heap.top.cast(), unsafe {
+            // one byte less than the `hole_size` given to `new` because of alignment
+            heap_start.add(2 * core::mem::size_of::<usize>())
+        });
+
+        assert_eq!(heap.first.size, 0); // dummy
+        assert_eq!(
+            heap.first.next,
+            Some(NonNull::new(heap.bottom.cast())).unwrap()
+        );
+        assert_eq!(
+            unsafe { &*(heap.first.next.unwrap().as_ptr()) }.size,
+            unsafe { heap.top.offset_from(heap.bottom) }
+                .try_into()
+                .unwrap()
+        );
+        assert_eq!(unsafe { &*(heap.first.next.unwrap().as_ptr()) }.next, None);
+    }
+
+    #[test]
+    #[should_panic]
+    fn hole_list_new_too_small() {
+        // define an array of `u64` instead of `u8` for alignment
+        static mut HEAP: [u64; 3] = [0; 3];
+
+        let heap_start: *mut u8 = unsafe { HEAP.as_mut_ptr().add(1) }.cast();
+        // initialize the HoleList with a hole_addr one byte before `heap_start`
+        // -> the function should align it up to `heap_start`, but then the
+        // available size is too small to store a hole -> it should panic
+        unsafe { HoleList::new(heap_start.sub(1), 2 * core::mem::size_of::<usize>()) };
+    }
+
+    #[test]
+    #[should_panic]
+    fn extend_empty() {
+        unsafe { HoleList::empty().extend(16) };
     }
 }

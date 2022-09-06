@@ -23,8 +23,8 @@ fn new_heap() -> Heap {
     let assumed_location = data.as_mut_ptr().cast();
 
     let heap = Heap::from_slice(data);
-    assert!(heap.bottom() == assumed_location);
-    assert!(heap.size() == HEAP_SIZE);
+    assert_eq!(heap.bottom(), assumed_location);
+    assert_eq!(heap.size(), align_down_size(HEAP_SIZE, size_of::<usize>()));
     heap
 }
 
@@ -37,8 +37,8 @@ fn new_max_heap() -> Heap {
 
     // Unsafe so that we have provenance over the whole allocation.
     let heap = unsafe { Heap::new(start_ptr, HEAP_SIZE) };
-    assert!(heap.bottom() == start_ptr);
-    assert!(heap.size() == HEAP_SIZE);
+    assert_eq!(heap.bottom(), start_ptr);
+    assert_eq!(heap.size(), HEAP_SIZE);
     heap
 }
 
@@ -196,11 +196,12 @@ fn allocate_many_size_aligns() {
     const STRATS: Range<usize> = 0..4;
 
     let mut heap = new_heap();
-    assert_eq!(heap.size(), 1000);
+    let aligned_heap_size = align_down_size(1000, size_of::<usize>());
+    assert_eq!(heap.size(), aligned_heap_size);
 
     heap.holes.debug();
 
-    let max_alloc = Layout::from_size_align(1000, 1).unwrap();
+    let max_alloc = Layout::from_size_align(aligned_heap_size, 1).unwrap();
     let full = heap.allocate_first_fit(max_alloc).unwrap();
     unsafe {
         heap.deallocate(full, max_alloc);
@@ -494,4 +495,51 @@ fn extend_fragmented_heap() {
     // We got additional 1024 bytes hole at the end of the heap
     // Try to allocate there
     assert!(heap.allocate_first_fit(layout_2.clone()).is_ok());
+}
+
+/// Ensures that `Heap::extend` fails for very small sizes.
+///
+/// The size needs to be big enough to hold a hole, otherwise
+/// the hole write would result in an out of bounds write.
+#[test]
+fn small_heap_extension() {
+    // define an array of `u64` instead of `u8` for alignment
+    static mut HEAP: [u64; 5] = [0; 5];
+    unsafe {
+        let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 32);
+        heap.extend(1);
+        assert_eq!(1, heap.holes.pending_extend);
+    }
+}
+
+/// Ensures that `Heap::extend` fails for sizes that are not a multiple of the hole size.
+#[test]
+fn oddly_sized_heap_extension() {
+    // define an array of `u64` instead of `u8` for alignment
+    static mut HEAP: [u64; 5] = [0; 5];
+    unsafe {
+        let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 16);
+        heap.extend(17);
+        assert_eq!(1, heap.holes.pending_extend);
+        assert_eq!(16 + 16, heap.size());
+    }
+}
+
+/// Ensures that heap extension fails when trying to extend an oddly-sized heap.
+///
+/// To extend the heap, we need to place a hole at the old top of the heap. This
+/// only works if the top pointer is sufficiently aligned.
+#[test]
+fn extend_odd_size() {
+    // define an array of `u64` instead of `u8` for alignment
+    static mut HEAP: [u64; 5] = [0; 5];
+    unsafe {
+        let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 17);
+        assert_eq!(1, heap.holes.pending_extend);
+        heap.extend(16);
+        assert_eq!(1, heap.holes.pending_extend);
+        heap.extend(15);
+        assert_eq!(0, heap.holes.pending_extend);
+        assert_eq!(17 + 16 + 15, heap.size());
+    }
 }
