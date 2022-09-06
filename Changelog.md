@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.10.2 – 2022-09-06
+
 # 0.10.1 – 2022-07-07
 
 - Fixed logic for freeing nodes ([#64])
