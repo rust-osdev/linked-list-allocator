@@ -2,6 +2,13 @@
 
 # 0.10.2 – 2022-09-06
 
+Fix for potential out-of-bound writes that were possible on `Heap` initialization and `Heap::extend`. See the [security advisory](https://github.com/rust-osdev/linked-list-allocator/security/advisories/GHSA-xg8p-34w2-j49j) for details. The issues were fixed in the following way:
+
+- The initialization functions now panic if the given size is not large enough to store the necessary metadata. Depending on the alignment of the heap bottom pointer, the minimum size is between `2 * size_of::<usize>` and `3 * size_of::<usize>`.
+- The `extend` method now panics when trying to extend an unitialized heap.
+- Extend calls with a size smaller than `size_of::<usize>() * 2` are now buffered internally and not added to the list directly. The buffered region will be merged with future `extend` calls.
+- The `size()` method now returns the _usable_ size of the heap, which might be slightly smaller than the `top() - bottom()` difference because of alignment constraints.
+
 # 0.10.1 – 2022-07-07
 
 - Fixed logic for freeing nodes ([#64])
