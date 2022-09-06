@@ -454,6 +454,8 @@ impl HoleList {
     }
 
     pub(crate) unsafe fn extend(&mut self, by: usize) {
+        assert!(!self.top.is_null(), "tried to extend an empty heap");
+
         let top = self.top;
 
         let dead_space = top.align_offset(align_of::<Hole>());
@@ -809,5 +811,11 @@ pub mod test {
         // -> the function should align it up to `heap_start`, but then the
         // available size is too small to store a hole -> it should panic
         unsafe { HoleList::new(heap_start.sub(1), 2 * core::mem::size_of::<usize>()) };
+    }
+
+    #[test]
+    #[should_panic]
+    fn extend_empty() {
+        unsafe { HoleList::empty().extend(16) };
     }
 }

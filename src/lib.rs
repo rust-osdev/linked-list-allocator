@@ -246,6 +246,8 @@ impl Heap {
     /// at least `2 * size_of::<usize>`, keeping the amount a multiple of
     /// `size_of::<usize>`.
     ///
+    /// Calling this method on an uninitialized Heap will panic.
+    ///
     /// # Safety
     ///
     /// The amount of data given in `by` MUST exist directly after the original
@@ -255,8 +257,6 @@ impl Heap {
     /// Even if this operation doesn't increase the [usable size][`Self::size`]
     /// by exactly `by` bytes, those bytes are still owned by the Heap for
     /// later use.
-    ///
-    /// Calling this method on an uninitialized Heap is undefined behavior.
     pub unsafe fn extend(&mut self, by: usize) {
         self.holes.extend(by);
     }
