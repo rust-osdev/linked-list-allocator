@@ -1,8 +1,8 @@
 # linked-list-allocator
 
-[![Build Status](https://travis-ci.org/phil-opp/linked-list-allocator.svg?branch=master)](https://travis-ci.org/phil-opp/linked-list-allocator)
-
-[![Documentation](https://docs.rs/linked_list_allocator/badge.svg)](https://docs.rs/linked_list_allocator/)
+[![Crates.io](https://img.shields.io/crates/v/linked-list-allocator)](https://crates.io/crates/linked-list-allocator)
+[![Build Status](https://github.com/rust-osdev/linked-list-allocator/workflows/Build/badge.svg)](https://github.com/rust-osdev/linked-list-allocator/actions?query=workflow%3ABuild)
+[![docs.rs](https://img.shields.io/badge/docs.rs-documentation-green.svg)](https://docs.rs/linked-list-allocator)
 
 ## Usage
 
