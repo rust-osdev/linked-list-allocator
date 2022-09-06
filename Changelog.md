@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.10.3 – 2022-09-06
+
 - Fix build on stable by adding missing field in `HoleList` initializer ([#68](https://github.com/rust-osdev/linked-list-allocator/pull/68))
   - Fixes a bug introduced in `v0.10.2`.
 
