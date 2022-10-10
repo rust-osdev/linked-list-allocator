@@ -5,7 +5,7 @@
 )]
 #![no_std]
 
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 #[macro_use]
 extern crate std;
 
@@ -35,6 +35,20 @@ mod test;
 pub struct Heap {
     used: usize,
     holes: HoleList,
+}
+
+#[cfg(fuzzing)]
+impl Heap {
+    pub fn debug(&mut self) {
+        println!(
+            "bottom: {:?}, top: {:?}, size: {}, pending: {}",
+            self.bottom(),
+            self.top(),
+            self.size(),
+            self.holes.first.size,
+        );
+        self.holes.debug();
+    }
 }
 
 unsafe impl Send for Heap {}
