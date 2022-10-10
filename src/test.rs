@@ -1,7 +1,12 @@
 use super::*;
-use core::alloc::Layout;
-use std::mem::{align_of, size_of, MaybeUninit};
-use std::prelude::v1::*;
+use core::{
+    alloc::Layout,
+    ops::{Deref, DerefMut},
+};
+use std::{
+    mem::{align_of, size_of, MaybeUninit},
+    prelude::v1::*,
+};
 
 #[repr(align(128))]
 struct Chonk<const N: usize> {
@@ -16,22 +21,45 @@ impl<const N: usize> Chonk<N> {
     }
 }
 
-fn new_heap() -> Heap {
+pub struct OwnedHeap<F> {
+    heap: Heap,
+    _drop: F,
+}
+
+impl<F> Deref for OwnedHeap<F> {
+    type Target = Heap;
+
+    fn deref(&self) -> &Self::Target {
+        &self.heap
+    }
+}
+
+impl<F> DerefMut for OwnedHeap<F> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.heap
+    }
+}
+
+pub fn new_heap() -> OwnedHeap<impl Sized> {
     const HEAP_SIZE: usize = 1000;
-    let heap_space = Box::leak(Box::new(Chonk::<HEAP_SIZE>::new()));
+    let mut heap_space = Box::new(Chonk::<HEAP_SIZE>::new());
     let data = &mut heap_space.data;
     let assumed_location = data.as_mut_ptr().cast();
 
-    let heap = Heap::from_slice(data);
+    let heap = unsafe { Heap::new(data.as_mut_ptr().cast(), data.len()) };
     assert_eq!(heap.bottom(), assumed_location);
     assert_eq!(heap.size(), align_down_size(HEAP_SIZE, size_of::<usize>()));
-    heap
+
+    let drop = move || {
+        let _ = heap_space;
+    };
+    OwnedHeap { heap, _drop: drop }
 }
 
-fn new_max_heap() -> Heap {
+fn new_max_heap() -> OwnedHeap<impl Sized> {
     const HEAP_SIZE: usize = 1024;
     const HEAP_SIZE_MAX: usize = 2048;
-    let heap_space = Box::leak(Box::new(Chonk::<HEAP_SIZE_MAX>::new()));
+    let mut heap_space = Box::new(Chonk::<HEAP_SIZE_MAX>::new());
     let data = &mut heap_space.data;
     let start_ptr = data.as_mut_ptr().cast();
 
@@ -39,7 +67,23 @@ fn new_max_heap() -> Heap {
     let heap = unsafe { Heap::new(start_ptr, HEAP_SIZE) };
     assert_eq!(heap.bottom(), start_ptr);
     assert_eq!(heap.size(), HEAP_SIZE);
-    heap
+
+    let drop = move || {
+        let _ = heap_space;
+    };
+    OwnedHeap { heap, _drop: drop }
+}
+
+fn new_heap_skip(ct: usize) -> OwnedHeap<impl Sized> {
+    const HEAP_SIZE: usize = 1000;
+    let mut heap_space = Box::new(Chonk::<HEAP_SIZE>::new());
+    let data = &mut heap_space.data[ct..];
+    let heap = unsafe { Heap::new(data.as_mut_ptr().cast(), data.len()) };
+
+    let drop = move || {
+        let _ = heap_space;
+    };
+    OwnedHeap { heap, _drop: drop }
 }
 
 #[test]
@@ -51,7 +95,15 @@ fn empty() {
 
 #[test]
 fn oom() {
-    let mut heap = new_heap();
+    const HEAP_SIZE: usize = 1000;
+    let mut heap_space = Box::new(Chonk::<HEAP_SIZE>::new());
+    let data = &mut heap_space.data;
+    let assumed_location = data.as_mut_ptr().cast();
+
+    let mut heap = unsafe { Heap::new(data.as_mut_ptr().cast(), data.len()) };
+    assert_eq!(heap.bottom(), assumed_location);
+    assert_eq!(heap.size(), align_down_size(HEAP_SIZE, size_of::<usize>()));
+
     let layout = Layout::from_size_align(heap.size() + 1, align_of::<usize>());
     let addr = heap.allocate_first_fit(layout.unwrap());
     assert!(addr.is_err());
@@ -386,14 +438,6 @@ fn allocate_multiple_unaligned() {
             heap.deallocate(b, layout_1);
         }
     }
-}
-
-fn new_heap_skip(ct: usize) -> Heap {
-    const HEAP_SIZE: usize = 1000;
-    let heap_space = Box::leak(Box::new(Chonk::<HEAP_SIZE>::new()));
-    let data = &mut heap_space.data[ct..];
-    let heap = Heap::from_slice(data);
-    heap
 }
 
 #[test]

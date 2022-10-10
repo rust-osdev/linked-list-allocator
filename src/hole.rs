@@ -120,31 +120,31 @@ impl Cursor {
             alloc_ptr = aligned_addr;
             alloc_size = required_size;
 
-            // Okay, time to move onto the back padding. Here, we are opportunistic -
-            // if it fits, we sits. Otherwise we just skip adding the back padding, and
-            // sort of assume that the allocation is actually a bit larger than it
-            // actually needs to be.
-            //
-            // NOTE: Because we always use `HoleList::align_layout`, the size of
-            // the new allocation is always "rounded up" to cover any partial gaps that
-            // would have occurred. For this reason, we DON'T need to "round up"
-            // to account for an unaligned hole spot.
-            let hole_layout = Layout::new::<Hole>();
-            let back_padding_start = align_up(allocation_end, hole_layout.align());
-            let back_padding_end = back_padding_start.wrapping_add(hole_layout.size());
-
-            // Will the proposed new back padding actually fit in the old hole slot?
-            back_padding = if back_padding_end <= hole_end {
-                // Yes, it does! Place a back padding node
-                Some(HoleInfo {
-                    addr: back_padding_start,
-                    size: (hole_end as usize) - (back_padding_start as usize),
-                })
-            } else {
-                // No, it does not. We are now pretending the allocation now
-                // holds the extra 0..size_of::<Hole>() bytes that are not
-                // big enough to hold what SHOULD be back_padding
+            // Okay, time to move onto the back padding.
+            let back_padding_size = hole_end as usize - allocation_end as usize;
+            back_padding = if back_padding_size == 0 {
                 None
+            } else {
+                // NOTE: Because we always use `HoleList::align_layout`, the size of
+                // the new allocation is always "rounded up" to cover any partial gaps that
+                // would have occurred. For this reason, we DON'T need to "round up"
+                // to account for an unaligned hole spot.
+                let hole_layout = Layout::new::<Hole>();
+                let back_padding_start = align_up(allocation_end, hole_layout.align());
+                let back_padding_end = back_padding_start.wrapping_add(hole_layout.size());
+
+                // Will the proposed new back padding actually fit in the old hole slot?
+                if back_padding_end <= hole_end {
+                    // Yes, it does! Place a back padding node
+                    Some(HoleInfo {
+                        addr: back_padding_start,
+                        size: back_padding_size,
+                    })
+                } else {
+                    // No, it does not. We don't want to leak any heap bytes, so we
+                    // consider this hole unsuitable for the requested allocation.
+                    return Err(self);
+                }
             };
         }
 
@@ -697,34 +697,9 @@ fn deallocate(list: &mut HoleList, addr: *mut u8, size: usize) {
 #[cfg(test)]
 pub mod test {
     use super::HoleList;
-    use crate::{align_down_size, Heap};
+    use crate::{align_down_size, test::new_heap};
     use core::mem::size_of;
-    use std::{alloc::Layout, convert::TryInto, mem::MaybeUninit, prelude::v1::*, ptr::NonNull};
-
-    #[repr(align(128))]
-    struct Chonk<const N: usize> {
-        data: [MaybeUninit<u8>; N],
-    }
-
-    impl<const N: usize> Chonk<N> {
-        pub fn new() -> Self {
-            Self {
-                data: [MaybeUninit::uninit(); N],
-            }
-        }
-    }
-
-    fn new_heap() -> Heap {
-        const HEAP_SIZE: usize = 1000;
-        let heap_space = Box::leak(Box::new(Chonk::<HEAP_SIZE>::new()));
-        let data = &mut heap_space.data;
-        let assumed_location = data.as_mut_ptr().cast();
-
-        let heap = Heap::from_slice(data);
-        assert_eq!(heap.bottom(), assumed_location);
-        assert_eq!(heap.size(), align_down_size(HEAP_SIZE, size_of::<usize>()));
-        heap
-    }
+    use std::{alloc::Layout, convert::TryInto, prelude::v1::*, ptr::NonNull};
 
     #[test]
     fn cursor() {
