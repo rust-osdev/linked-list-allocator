@@ -697,34 +697,9 @@ fn deallocate(list: &mut HoleList, addr: *mut u8, size: usize) {
 #[cfg(test)]
 pub mod test {
     use super::HoleList;
-    use crate::{align_down_size, Heap};
+    use crate::{align_down_size, test::new_heap};
     use core::mem::size_of;
-    use std::{alloc::Layout, convert::TryInto, mem::MaybeUninit, prelude::v1::*, ptr::NonNull};
-
-    #[repr(align(128))]
-    struct Chonk<const N: usize> {
-        data: [MaybeUninit<u8>; N],
-    }
-
-    impl<const N: usize> Chonk<N> {
-        pub fn new() -> Self {
-            Self {
-                data: [MaybeUninit::uninit(); N],
-            }
-        }
-    }
-
-    fn new_heap() -> Heap {
-        const HEAP_SIZE: usize = 1000;
-        let heap_space = Box::leak(Box::new(Chonk::<HEAP_SIZE>::new()));
-        let data = &mut heap_space.data;
-        let assumed_location = data.as_mut_ptr().cast();
-
-        let heap = Heap::from_slice(data);
-        assert_eq!(heap.bottom(), assumed_location);
-        assert_eq!(heap.size(), align_down_size(HEAP_SIZE, size_of::<usize>()));
-        heap
-    }
+    use std::{alloc::Layout, convert::TryInto, prelude::v1::*, ptr::NonNull};
 
     #[test]
     fn cursor() {

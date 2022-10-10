@@ -135,7 +135,7 @@ jobs:
     name: "Miri tests"
     runs-on: ubuntu-latest
     env:
-      MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-strict-provenance -Zmiri-tag-raw-pointers -Zmiri-ignore-leaks"
+      MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-strict-provenance -Zmiri-tag-raw-pointers"
     steps:
     - uses: actions/checkout@v1
     - run: rustup toolchain install nightly --profile minimal --component rust-src miri
