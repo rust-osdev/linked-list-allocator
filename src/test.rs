@@ -1,8 +1,12 @@
 use super::*;
-use core::alloc::Layout;
-use core::ops::DerefMut;
-use std::mem::{align_of, size_of, MaybeUninit};
-use std::prelude::v1::*;
+use core::{
+    alloc::Layout,
+    ops::{Deref, DerefMut},
+};
+use std::{
+    mem::{align_of, size_of, MaybeUninit},
+    prelude::v1::*,
+};
 
 #[repr(align(128))]
 struct Chonk<const N: usize> {
