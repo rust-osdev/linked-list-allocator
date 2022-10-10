@@ -1,5 +1,7 @@
 # Unreleased
 
+- Fix [memory leak of small back paddings](https://github.com/rust-osdev/linked-list-allocator/issues/66) by considering regions that would result in such small back paddings as unsuitable ([#71](https://github.com/rust-osdev/linked-list-allocator/pull/71))
+
 # 0.10.3 – 2022-09-06
 
 - Fix build on stable by adding missing field in `HoleList` initializer ([#68](https://github.com/rust-osdev/linked-list-allocator/pull/68))
