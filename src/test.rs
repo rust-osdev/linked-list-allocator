@@ -43,15 +43,14 @@ impl<F> DerefMut for OwnedHeap<F> {
 pub fn new_heap() -> OwnedHeap<impl Sized> {
     const HEAP_SIZE: usize = 1000;
     let mut heap_space = Box::new(Chonk::<HEAP_SIZE>::new());
-    let data = &mut heap_space.data;
+    let data = &mut Box::leak(heap_space).data;
     let assumed_location = data.as_mut_ptr().cast();
 
     let heap = unsafe { Heap::new(data.as_mut_ptr().cast(), data.len()) };
     assert_eq!(heap.bottom(), assumed_location);
     assert_eq!(heap.size(), align_down_size(HEAP_SIZE, size_of::<usize>()));
-
     let drop = move || {
-        let _ = heap_space;
+        // let _ = heap_space;
     };
     OwnedHeap { heap, _drop: drop }
 }
@@ -60,7 +59,7 @@ fn new_max_heap() -> OwnedHeap<impl Sized> {
     const HEAP_SIZE: usize = 1024;
     const HEAP_SIZE_MAX: usize = 2048;
     let mut heap_space = Box::new(Chonk::<HEAP_SIZE_MAX>::new());
-    let data = &mut heap_space.data;
+    let data = &mut Box::leak(heap_space).data;
     let start_ptr = data.as_mut_ptr().cast();
 
     // Unsafe so that we have provenance over the whole allocation.
@@ -69,7 +68,7 @@ fn new_max_heap() -> OwnedHeap<impl Sized> {
     assert_eq!(heap.size(), HEAP_SIZE);
 
     let drop = move || {
-        let _ = heap_space;
+        // let _ = heap_space;
     };
     OwnedHeap { heap, _drop: drop }
 }
@@ -77,11 +76,11 @@ fn new_max_heap() -> OwnedHeap<impl Sized> {
 fn new_heap_skip(ct: usize) -> OwnedHeap<impl Sized> {
     const HEAP_SIZE: usize = 1000;
     let mut heap_space = Box::new(Chonk::<HEAP_SIZE>::new());
-    let data = &mut heap_space.data[ct..];
+    let data = &mut Box::leak(heap_space).data[ct..];
     let heap = unsafe { Heap::new(data.as_mut_ptr().cast(), data.len()) };
 
     let drop = move || {
-        let _ = heap_space;
+        // let _ = heap_space;
     };
     OwnedHeap { heap, _drop: drop }
 }
