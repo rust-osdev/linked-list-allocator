@@ -35,12 +35,28 @@ impl<const N: usize> Chonk<N> {
     }
 }
 
-pub struct OwnedHeap<F> {
-    heap: Heap,
-    _drop: F,
+pub struct Dropper<const N: usize> {
+    putter: *mut Chonk<N>,
 }
 
-impl<F> Deref for OwnedHeap<F> {
+impl<const N: usize> Dropper<N> {
+    fn new(putter: *mut Chonk<N>) -> Self {
+        Self { putter }
+    }
+}
+
+impl<const N: usize> Drop for Dropper<N> {
+    fn drop(&mut self) {
+        unsafe { Chonk::unleak(self.putter) }
+    }
+}
+
+pub struct OwnedHeap<const N: usize> {
+    heap: Heap,
+    _drop: Dropper<N>,
+}
+
+impl<const N: usize> Deref for OwnedHeap<N> {
     type Target = Heap;
 
     fn deref(&self) -> &Self::Target {
@@ -48,24 +64,26 @@ impl<F> Deref for OwnedHeap<F> {
     }
 }
 
-impl<F> DerefMut for OwnedHeap<F> {
+impl<const N: usize> DerefMut for OwnedHeap<N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.heap
     }
 }
 
-pub fn new_heap() -> OwnedHeap<impl Sized> {
+pub fn new_heap() -> OwnedHeap<1000> {
     const HEAP_SIZE: usize = 1000;
     let (heap_space_ptr, data_ptr) = Chonk::<HEAP_SIZE>::new();
 
     let heap = unsafe { Heap::new(data_ptr, HEAP_SIZE) };
     assert_eq!(heap.bottom(), data_ptr);
     assert_eq!(heap.size(), align_down_size(HEAP_SIZE, size_of::<usize>()));
-    let drop = move || unsafe { Chonk::unleak(heap_space_ptr) };
-    OwnedHeap { heap, _drop: drop }
+    OwnedHeap {
+        heap,
+        _drop: Dropper::new(heap_space_ptr),
+    }
 }
 
-fn new_max_heap() -> OwnedHeap<impl Sized> {
+fn new_max_heap() -> OwnedHeap<2048> {
     const HEAP_SIZE: usize = 1024;
     const HEAP_SIZE_MAX: usize = 2048;
     let (heap_space_ptr, data_ptr) = Chonk::<HEAP_SIZE_MAX>::new();
@@ -75,18 +93,21 @@ fn new_max_heap() -> OwnedHeap<impl Sized> {
     assert_eq!(heap.bottom(), data_ptr);
     assert_eq!(heap.size(), HEAP_SIZE);
 
-    let drop = move || unsafe { Chonk::unleak(heap_space_ptr) };
-    OwnedHeap { heap, _drop: drop }
+    OwnedHeap {
+        heap,
+        _drop: Dropper::new(heap_space_ptr),
+    }
 }
 
-fn new_heap_skip(ct: usize) -> OwnedHeap<impl Sized> {
+fn new_heap_skip(ct: usize) -> OwnedHeap<1000> {
     const HEAP_SIZE: usize = 1000;
     let (heap_space_ptr, data_ptr) = Chonk::<HEAP_SIZE>::new();
 
     let heap = unsafe { Heap::new(data_ptr.add(ct), HEAP_SIZE - ct) };
-
-    let drop = move || unsafe { Chonk::unleak(heap_space_ptr) };
-    OwnedHeap { heap, _drop: drop }
+    OwnedHeap {
+        heap,
+        _drop: Dropper::new(heap_space_ptr),
+    }
 }
 
 #[test]
