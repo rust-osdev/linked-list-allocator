@@ -117,4 +117,8 @@ fn fuzz(size: u16, actions: Vec<Action>) {
             heap.deallocate(ptr, layout);
         }
     }
+
+    // make sure we can allocate the full heap (no fragmentation)
+    let full = Layout::from_size_align(heap.size(), 1).unwrap();
+    assert!(heap.allocate_first_fit(full).is_ok());
 }
