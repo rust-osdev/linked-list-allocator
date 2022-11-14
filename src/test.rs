@@ -10,23 +10,56 @@ use std::{
 
 #[repr(align(128))]
 struct Chonk<const N: usize> {
-    data: [MaybeUninit<u8>; N],
+    data: MaybeUninit<[u8; N]>,
 }
 
 impl<const N: usize> Chonk<N> {
-    pub fn new() -> Self {
-        Self {
-            data: [MaybeUninit::uninit(); N],
-        }
+    /// Returns (almost certainly aliasing) pointers to the Chonk
+    /// as well as the data payload.
+    ///
+    /// MUST be freed with a matching call to `Chonk::unleak`
+    pub fn new() -> (*mut Chonk<N>, *mut u8) {
+        let heap_space_ptr: *mut Chonk<N> = {
+            let owned_box = Box::new(Self {
+                data: MaybeUninit::uninit(),
+            });
+            let mutref = Box::leak(owned_box);
+            mutref
+        };
+        let data_ptr: *mut u8 = unsafe { core::ptr::addr_of_mut!((*heap_space_ptr).data).cast() };
+        (heap_space_ptr, data_ptr)
+    }
+
+    pub unsafe fn unleak(putter: *mut Chonk<N>) {
+        drop(Box::from_raw(putter))
     }
 }
 
-pub struct OwnedHeap<F> {
-    heap: Heap,
-    _drop: F,
+pub struct Dropper<const N: usize> {
+    putter: *mut Chonk<N>,
 }
 
-impl<F> Deref for OwnedHeap<F> {
+impl<const N: usize> Dropper<N> {
+    fn new(putter: *mut Chonk<N>) -> Self {
+        Self { putter }
+    }
+}
+
+impl<const N: usize> Drop for Dropper<N> {
+    fn drop(&mut self) {
+        unsafe { Chonk::unleak(self.putter) }
+    }
+}
+
+pub struct OwnedHeap<const N: usize> {
+    heap: Heap,
+    // /!\ SAFETY /!\: Load bearing drop order! `_drop` MUST be dropped AFTER
+    // `heap` is dropped. This is enforced by rust's built-in drop ordering, as
+    // long as `_drop` is declared after `heap`.
+    _drop: Dropper<N>,
+}
+
+impl<const N: usize> Deref for OwnedHeap<N> {
     type Target = Heap;
 
     fn deref(&self) -> &Self::Target {
@@ -34,56 +67,50 @@ impl<F> Deref for OwnedHeap<F> {
     }
 }
 
-impl<F> DerefMut for OwnedHeap<F> {
+impl<const N: usize> DerefMut for OwnedHeap<N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.heap
     }
 }
 
-pub fn new_heap() -> OwnedHeap<impl Sized> {
+pub fn new_heap() -> OwnedHeap<1000> {
     const HEAP_SIZE: usize = 1000;
-    let mut heap_space = Box::new(Chonk::<HEAP_SIZE>::new());
-    let data = &mut heap_space.data;
-    let assumed_location = data.as_mut_ptr().cast();
+    let (heap_space_ptr, data_ptr) = Chonk::<HEAP_SIZE>::new();
 
-    let heap = unsafe { Heap::new(data.as_mut_ptr().cast(), data.len()) };
-    assert_eq!(heap.bottom(), assumed_location);
+    let heap = unsafe { Heap::new(data_ptr, HEAP_SIZE) };
+    assert_eq!(heap.bottom(), data_ptr);
     assert_eq!(heap.size(), align_down_size(HEAP_SIZE, size_of::<usize>()));
-
-    let drop = move || {
-        let _ = heap_space;
-    };
-    OwnedHeap { heap, _drop: drop }
+    OwnedHeap {
+        heap,
+        _drop: Dropper::new(heap_space_ptr),
+    }
 }
 
-fn new_max_heap() -> OwnedHeap<impl Sized> {
+fn new_max_heap() -> OwnedHeap<2048> {
     const HEAP_SIZE: usize = 1024;
     const HEAP_SIZE_MAX: usize = 2048;
-    let mut heap_space = Box::new(Chonk::<HEAP_SIZE_MAX>::new());
-    let data = &mut heap_space.data;
-    let start_ptr = data.as_mut_ptr().cast();
+    let (heap_space_ptr, data_ptr) = Chonk::<HEAP_SIZE_MAX>::new();
 
     // Unsafe so that we have provenance over the whole allocation.
-    let heap = unsafe { Heap::new(start_ptr, HEAP_SIZE) };
-    assert_eq!(heap.bottom(), start_ptr);
+    let heap = unsafe { Heap::new(data_ptr, HEAP_SIZE) };
+    assert_eq!(heap.bottom(), data_ptr);
     assert_eq!(heap.size(), HEAP_SIZE);
 
-    let drop = move || {
-        let _ = heap_space;
-    };
-    OwnedHeap { heap, _drop: drop }
+    OwnedHeap {
+        heap,
+        _drop: Dropper::new(heap_space_ptr),
+    }
 }
 
-fn new_heap_skip(ct: usize) -> OwnedHeap<impl Sized> {
+fn new_heap_skip(ct: usize) -> OwnedHeap<1000> {
     const HEAP_SIZE: usize = 1000;
-    let mut heap_space = Box::new(Chonk::<HEAP_SIZE>::new());
-    let data = &mut heap_space.data[ct..];
-    let heap = unsafe { Heap::new(data.as_mut_ptr().cast(), data.len()) };
+    let (heap_space_ptr, data_ptr) = Chonk::<HEAP_SIZE>::new();
 
-    let drop = move || {
-        let _ = heap_space;
-    };
-    OwnedHeap { heap, _drop: drop }
+    let heap = unsafe { Heap::new(data_ptr.add(ct), HEAP_SIZE - ct) };
+    OwnedHeap {
+        heap,
+        _drop: Dropper::new(heap_space_ptr),
+    }
 }
 
 #[test]
@@ -96,17 +123,18 @@ fn empty() {
 #[test]
 fn oom() {
     const HEAP_SIZE: usize = 1000;
-    let mut heap_space = Box::new(Chonk::<HEAP_SIZE>::new());
-    let data = &mut heap_space.data;
-    let assumed_location = data.as_mut_ptr().cast();
+    let (heap_space_ptr, data_ptr) = Chonk::<HEAP_SIZE>::new();
 
-    let mut heap = unsafe { Heap::new(data.as_mut_ptr().cast(), data.len()) };
-    assert_eq!(heap.bottom(), assumed_location);
+    let mut heap = unsafe { Heap::new(data_ptr, HEAP_SIZE) };
+    assert_eq!(heap.bottom(), data_ptr);
     assert_eq!(heap.size(), align_down_size(HEAP_SIZE, size_of::<usize>()));
 
     let layout = Layout::from_size_align(heap.size() + 1, align_of::<usize>());
     let addr = heap.allocate_first_fit(layout.unwrap());
     assert!(addr.is_err());
+
+    // Explicitly unleak the heap allocation
+    unsafe { Chonk::unleak(heap_space_ptr) };
 }
 
 #[test]
