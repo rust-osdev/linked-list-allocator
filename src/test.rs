@@ -53,6 +53,9 @@ impl<const N: usize> Drop for Dropper<N> {
 
 pub struct OwnedHeap<const N: usize> {
     heap: Heap,
+    // /!\ SAFETY /!\: Load bearing drop order! `_drop` MUST be dropped AFTER
+    // `heap` is dropped. This is enforced by rust's built-in drop ordering, as
+    // long as `_drop` is declared after `heap`.
     _drop: Dropper<N>,
 }
 
