@@ -11,11 +11,15 @@ repository = "https://github.com/phil-opp/linked-list-allocator"
 documentation = "https://docs.rs/crate/linked_list_allocator"
 homepage = "http://os.phil-opp.com/kernel-heap.html#a-better-allocator"
 
+rust-version = "1.61"
+
 [features]
-default = ["use_spin_nightly"]
-use_spin = ["spinning_top"]
-use_spin_nightly = ["use_spin", "spinning_top/nightly", "const_mut_refs"]
+default = ["use_spin"]
+use_spin = ["spinning_top", "dep:lock_api"]
+# deprecated - use `use_spin` instead
+use_spin_nightly = ["use_spin"]
 alloc_ref = []
+# deprecated - no effect
 const_mut_refs = []
 
 [dependencies.spinning_top]
@@ -28,3 +32,10 @@ pre-release-replacements = [
     { file = "Changelog.md", search = "# Unreleased", replace = "# Unreleased\n\n# {{version}} – {{date}}", exactly = 1 },
 ]
 pre-release-commit-message = "Release version {{version}}"
+
+# This is only used indirectly, via spinning_top. It's declared here as well
+# to guarantee the use of a version >= 0.4.7. Once spinning_top depends
+# on a sufficiently recent version, this dependency can be removed.
+[dependencies.lock_api]
+version = "0.4.7"
+optional = true

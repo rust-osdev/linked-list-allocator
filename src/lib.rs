@@ -1,4 +1,3 @@
-#![cfg_attr(feature = "const_mut_refs", feature(const_mut_refs))]
 #![cfg_attr(
     feature = "alloc_ref",
     feature(allocator_api, alloc_layout_extra, nonnull_slice_from_raw_parts)
@@ -55,15 +54,6 @@ unsafe impl Send for Heap {}
 
 impl Heap {
     /// Creates an empty heap. All allocate calls will return `None`.
-    #[cfg(not(feature = "const_mut_refs"))]
-    pub fn empty() -> Heap {
-        Heap {
-            used: 0,
-            holes: HoleList::empty(),
-        }
-    }
-
-    #[cfg(feature = "const_mut_refs")]
     pub const fn empty() -> Heap {
         Heap {
             used: 0,
@@ -300,15 +290,7 @@ pub struct LockedHeap(Spinlock<Heap>);
 
 #[cfg(feature = "use_spin")]
 impl LockedHeap {
-    /// Creates an empty heap. All allocate calls will return `None`.
-    #[cfg(feature = "use_spin_nightly")]
     pub const fn empty() -> LockedHeap {
-        LockedHeap(Spinlock::new(Heap::empty()))
-    }
-
-    /// Creates an empty heap. All allocate calls will return `None`.
-    #[cfg(not(feature = "use_spin_nightly"))]
-    pub fn empty() -> LockedHeap {
         LockedHeap(Spinlock::new(Heap::empty()))
     }
 
