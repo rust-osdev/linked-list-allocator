@@ -15,7 +15,7 @@ rust-version = "1.61"
 
 [features]
 default = ["use_spin"]
-use_spin = ["spinning_top", "dep:lock_api"]
+use_spin = ["spinning_top"]
 # deprecated - use `use_spin` instead
 use_spin_nightly = ["use_spin"]
 alloc_ref = []
@@ -23,7 +23,7 @@ alloc_ref = []
 const_mut_refs = []
 
 [dependencies.spinning_top]
-version = "0.2.3"
+version = "0.2.5"
 optional = true
 
 [package.metadata.release]
@@ -32,10 +32,3 @@ pre-release-replacements = [
     { file = "Changelog.md", search = "# Unreleased", replace = "# Unreleased\n\n# {{version}} – {{date}}", exactly = 1 },
 ]
 pre-release-commit-message = "Release version {{version}}"
-
-# This is only used indirectly, via spinning_top. It's declared here as well
-# to guarantee the use of a version >= 0.4.7. Once spinning_top depends
-# on a sufficiently recent version, this dependency can be removed.
-[dependencies.lock_api]
-version = "0.4.7"
-optional = true
