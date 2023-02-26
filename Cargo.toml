@@ -11,15 +11,19 @@ repository = "https://github.com/phil-opp/linked-list-allocator"
 documentation = "https://docs.rs/crate/linked_list_allocator"
 homepage = "http://os.phil-opp.com/kernel-heap.html#a-better-allocator"
 
+rust-version = "1.61"
+
 [features]
-default = ["use_spin_nightly"]
+default = ["use_spin"]
 use_spin = ["spinning_top"]
-use_spin_nightly = ["use_spin", "spinning_top/nightly", "const_mut_refs"]
+# deprecated - use `use_spin` instead
+use_spin_nightly = ["use_spin"]
 alloc_ref = []
+# deprecated - no effect
 const_mut_refs = []
 
 [dependencies.spinning_top]
-version = "0.2.3"
+version = "0.2.5"
 optional = true
 
 [package.metadata.release]

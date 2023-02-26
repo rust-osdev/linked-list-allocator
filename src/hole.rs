@@ -257,21 +257,6 @@ fn check_merge_bottom(node: NonNull<Hole>, bottom: *mut u8) -> NonNull<Hole> {
 
 impl HoleList {
     /// Creates an empty `HoleList`.
-    #[cfg(not(feature = "const_mut_refs"))]
-    pub fn empty() -> HoleList {
-        HoleList {
-            first: Hole {
-                size: 0,
-                next: None,
-            },
-            bottom: null_mut(),
-            top: null_mut(),
-            pending_extend: 0,
-        }
-    }
-
-    /// Creates an empty `HoleList`.
-    #[cfg(feature = "const_mut_refs")]
     pub const fn empty() -> HoleList {
         HoleList {
             first: Hole {
