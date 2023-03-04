@@ -1,7 +1,8 @@
 # Unreleased
 
-- Remove features const_mut_refs and use_spin_nightly. Since rust 1.61, the underlying const functions are available in stable rust,
-  and lock_api >= 0.4.7 automatically uses them. (Feature const_fn_trait_bound, https://github.com/rust-lang/rust/pull/93827)
+- Remove features `const_mut_refs` and `use_spin_nightly`.
+
+  Since rust 1.61, the [required const features](https://github.com/rust-lang/rust/pull/93827) are available in stable rust, and `lock_api` >= 0.4.7 automatically uses them.
   To avoid a breaking change, the features are still listed in Cargo.toml, but have no effect and are marked as deprecated.
   This bumps the minimum supported rust version to 1.61.
 
