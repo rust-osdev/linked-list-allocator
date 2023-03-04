@@ -1,5 +1,7 @@
 # Unreleased
 
+# 0.10.5 – 2023-03-04
+
 - Remove features `const_mut_refs` and `use_spin_nightly`.
 
   Since rust 1.61, the [required const features](https://github.com/rust-lang/rust/pull/93827) are available in stable rust, and `lock_api` >= 0.4.7 automatically uses them.
