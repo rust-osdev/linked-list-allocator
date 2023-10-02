@@ -1,4 +1,4 @@
-use core::alloc::Layout;
+use core::alloc::{Layout, LayoutError};
 use core::mem;
 use core::mem::{align_of, size_of};
 use core::ptr::null_mut;
@@ -365,13 +365,13 @@ impl HoleList {
     /// The [`allocate_first_fit`][HoleList::allocate_first_fit] and
     /// [`deallocate`][HoleList::deallocate] methods perform the required alignment
     /// themselves, so calling this function manually is not necessary.
-    pub fn align_layout(layout: Layout) -> Layout {
+    pub fn align_layout(layout: Layout) -> Result<Layout, LayoutError> {
         let mut size = layout.size();
         if size < Self::min_size() {
             size = Self::min_size();
         }
         let size = align_up_size(size, mem::align_of::<Hole>());
-        Layout::from_size_align(size, layout.align()).unwrap()
+        Layout::from_size_align(size, layout.align())
     }
 
     /// Searches the list for a big enough hole.
@@ -389,7 +389,7 @@ impl HoleList {
     // release to remove this clippy warning
     #[allow(clippy::result_unit_err)]
     pub fn allocate_first_fit(&mut self, layout: Layout) -> Result<(NonNull<u8>, Layout), ()> {
-        let aligned_layout = Self::align_layout(layout);
+        let aligned_layout = Self::align_layout(layout).map_err(|_| ())?;
         let mut cursor = self.cursor().ok_or(())?;
 
         loop {
@@ -419,7 +419,7 @@ impl HoleList {
     /// The function performs exactly the same layout adjustments as [`allocate_first_fit`] and
     /// returns the aligned layout.
     pub unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout) -> Layout {
-        let aligned_layout = Self::align_layout(layout);
+        let aligned_layout = Self::align_layout(layout).unwrap();
         deallocate(self, ptr.as_ptr(), aligned_layout.size());
         aligned_layout
     }
