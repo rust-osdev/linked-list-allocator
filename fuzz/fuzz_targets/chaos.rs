@@ -3,7 +3,7 @@ use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
 use linked_list_allocator::Heap;
 use std::alloc::Layout;
-use std::ptr::NonNull;
+use std::ptr::{addr_of, NonNull};
 
 #[derive(Debug, Arbitrary)]
 enum Action {
@@ -81,8 +81,8 @@ fn fuzz(size: u16, actions: Vec<Action>) {
             Extend { additional } =>
             // safety: new heap size never exceeds MAX_HEAP_SIZE
             unsafe {
-                let remaining_space = HEAP_MEM
-                    .as_mut_ptr()
+                let remaining_space = addr_of!(HEAP_MEM)
+                    .cast::<u8>()
                     .add(MAX_HEAP_SIZE)
                     .offset_from(heap.top());
                 assert!(remaining_space >= 0);
