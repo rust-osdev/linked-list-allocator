@@ -1,7 +1,4 @@
-#![cfg_attr(
-    feature = "alloc_ref",
-    feature(allocator_api, alloc_layout_extra, nonnull_slice_from_raw_parts)
-)]
+#![cfg_attr(feature = "alloc_ref", feature(allocator_api, alloc_layout_extra))]
 #![no_std]
 
 #[cfg(any(test, fuzzing))]
