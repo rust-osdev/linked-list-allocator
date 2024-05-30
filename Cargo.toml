@@ -26,6 +26,9 @@ const_mut_refs = []
 version = "0.2.5"
 optional = true
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
+
 [package.metadata.release]
 dev-version = false
 pre-release-replacements = [
