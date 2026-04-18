@@ -117,7 +117,7 @@ fn new_heap_skip(ct: usize) -> OwnedHeap<1000> {
 fn empty() {
     let mut heap = Heap::empty();
     let layout = Layout::from_size_align(1, 1).unwrap();
-    assert!(heap.allocate_first_fit(layout.clone()).is_err());
+    assert!(heap.allocate_first_fit(layout.clone()).is_none());
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn oom() {
 
     let layout = Layout::from_size_align(heap.size() + 1, align_of::<usize>());
     let addr = heap.allocate_first_fit(layout.unwrap());
-    assert!(addr.is_err());
+    assert!(addr.is_none());
 
     // Explicitly unleak the heap allocation
     unsafe { Chonk::unleak(heap_space_ptr) };
@@ -143,10 +143,10 @@ fn allocate_double_usize() {
     let size = size_of::<usize>() * 2;
     let layout = Layout::from_size_align(size, align_of::<usize>());
     let addr = heap.allocate_first_fit(layout.unwrap());
-    assert!(addr.is_ok());
+    assert!(addr.is_some());
     let addr = addr.unwrap().as_ptr();
     assert!(addr == heap.bottom());
-    let (hole_addr, hole_size) = heap.holes.first_hole().expect("ERROR: no hole left");
+    let (hole_addr, hole_size) = heap.holes[0].first_hole().expect("ERROR: no hole left");
     assert!(hole_addr == heap.bottom().wrapping_add(size));
     assert!(hole_size == heap.size() - size);
 
@@ -168,7 +168,7 @@ fn allocate_and_free_double_usize() {
         *(x.as_ptr() as *mut (usize, usize)) = (0xdeafdeadbeafbabe, 0xdeafdeadbeafbabe);
 
         heap.deallocate(x, layout.clone());
-        let real_first = heap.holes.first.next.as_ref().unwrap().as_ref();
+        let real_first = heap.holes[0].first.next.as_ref().unwrap().as_ref();
 
         assert_eq!(real_first.size, heap.size());
         assert!(real_first.next.is_none());
@@ -279,7 +279,7 @@ fn allocate_many_size_aligns() {
     let aligned_heap_size = align_down_size(1000, size_of::<usize>());
     assert_eq!(heap.size(), aligned_heap_size);
 
-    heap.holes.debug();
+    heap.holes[0].debug();
 
     let max_alloc = Layout::from_size_align(aligned_heap_size, 1).unwrap();
     let full = heap.allocate_first_fit(max_alloc).unwrap();
@@ -287,7 +287,7 @@ fn allocate_many_size_aligns() {
         heap.deallocate(full, max_alloc);
     }
 
-    heap.holes.debug();
+    heap.holes[0].debug();
 
     struct Alloc {
         alloc: NonNull<u8>,
@@ -310,9 +310,9 @@ fn allocate_many_size_aligns() {
                 let mut allocs = vec![];
 
                 let layout = Layout::from_size_align(size, 1 << align).unwrap();
-                while let Ok(alloc) = heap.allocate_first_fit(layout) {
+                while let Some(alloc) = heap.allocate_first_fit(layout) {
                     #[cfg(not(miri))]
-                    heap.holes.debug();
+                    heap.holes[0].debug();
                     allocs.push(Alloc { alloc, layout });
                 }
 
@@ -325,7 +325,7 @@ fn allocate_many_size_aligns() {
                         allocs.drain(..).for_each(|a| unsafe {
                             heap.deallocate(a.alloc, a.layout);
                             #[cfg(not(miri))]
-                            heap.holes.debug();
+                            heap.holes[0].debug();
                         });
                     }
                     1 => {
@@ -333,7 +333,7 @@ fn allocate_many_size_aligns() {
                         allocs.drain(..).rev().for_each(|a| unsafe {
                             heap.deallocate(a.alloc, a.layout);
                             #[cfg(not(miri))]
-                            heap.holes.debug();
+                            heap.holes[0].debug();
                         });
                     }
                     2 => {
@@ -350,12 +350,12 @@ fn allocate_many_size_aligns() {
                         a.drain(..).for_each(|a| unsafe {
                             heap.deallocate(a.alloc, a.layout);
                             #[cfg(not(miri))]
-                            heap.holes.debug();
+                            heap.holes[0].debug();
                         });
                         b.drain(..).for_each(|a| unsafe {
                             heap.deallocate(a.alloc, a.layout);
                             #[cfg(not(miri))]
-                            heap.holes.debug();
+                            heap.holes[0].debug();
                         });
                     }
                     3 => {
@@ -372,12 +372,12 @@ fn allocate_many_size_aligns() {
                         a.drain(..).for_each(|a| unsafe {
                             heap.deallocate(a.alloc, a.layout);
                             #[cfg(not(miri))]
-                            heap.holes.debug();
+                            heap.holes[0].debug();
                         });
                         b.drain(..).for_each(|a| unsafe {
                             heap.deallocate(a.alloc, a.layout);
                             #[cfg(not(miri))]
-                            heap.holes.debug();
+                            heap.holes[0].debug();
                         });
                     }
                     _ => panic!(),
@@ -474,7 +474,7 @@ fn allocate_usize() {
 
     let layout = Layout::from_size_align(size_of::<usize>(), 1).unwrap();
 
-    assert!(heap.allocate_first_fit(layout.clone()).is_ok());
+    assert!(heap.allocate_first_fit(layout.clone()).is_some());
 }
 
 #[test]
@@ -491,7 +491,7 @@ fn allocate_usize_in_bigger_block() {
     }
 
     let z = heap.allocate_first_fit(layout_2.clone());
-    assert!(z.is_ok());
+    assert!(z.is_some());
     let z = z.unwrap();
     assert_eq!(x, z);
 
@@ -510,9 +510,9 @@ fn align_from_small_to_big() {
     let layout_2 = Layout::from_size_align(8, 8).unwrap();
 
     // allocate 28 bytes so that the heap end is only 4 byte aligned
-    assert!(heap.allocate_first_fit(layout_1.clone()).is_ok());
+    assert!(heap.allocate_first_fit(layout_1.clone()).is_some());
     // try to allocate a 8 byte aligned block
-    assert!(heap.allocate_first_fit(layout_2.clone()).is_ok());
+    assert!(heap.allocate_first_fit(layout_2.clone()).is_some());
 }
 
 #[test]
@@ -525,7 +525,7 @@ fn extend_empty_heap() {
 
     // Try to allocate full heap after extend
     let layout = Layout::from_size_align(2048, 1).unwrap();
-    assert!(heap.allocate_first_fit(layout.clone()).is_ok());
+    assert!(heap.allocate_first_fit(layout.clone()).is_some());
 }
 
 #[test]
@@ -535,11 +535,11 @@ fn extend_full_heap() {
     let layout = Layout::from_size_align(1024, 1).unwrap();
 
     // Allocate full heap, extend and allocate again to the max
-    assert!(heap.allocate_first_fit(layout.clone()).is_ok());
+    assert!(heap.allocate_first_fit(layout.clone()).is_some());
     unsafe {
         heap.extend(1024);
     }
-    assert!(heap.allocate_first_fit(layout.clone()).is_ok());
+    assert!(heap.allocate_first_fit(layout.clone()).is_some());
 }
 
 #[test]
@@ -552,8 +552,8 @@ fn extend_fragmented_heap() {
     let alloc1 = heap.allocate_first_fit(layout_1.clone());
     let alloc2 = heap.allocate_first_fit(layout_1.clone());
 
-    assert!(alloc1.is_ok());
-    assert!(alloc2.is_ok());
+    assert!(alloc1.is_some());
+    assert!(alloc2.is_some());
 
     unsafe {
         // Create a hole at the beginning of the heap
@@ -566,7 +566,7 @@ fn extend_fragmented_heap() {
 
     // We got additional 1024 bytes hole at the end of the heap
     // Try to allocate there
-    assert!(heap.allocate_first_fit(layout_2.clone()).is_ok());
+    assert!(heap.allocate_first_fit(layout_2.clone()).is_some());
 }
 
 /// Ensures that `Heap::extend` fails for very small sizes.
@@ -580,7 +580,7 @@ fn small_heap_extension() {
     unsafe {
         let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 32);
         heap.extend(1);
-        assert_eq!(1, heap.holes.pending_extend);
+        assert_eq!(1, heap.holes[0].pending_extend);
     }
 }
 
@@ -592,7 +592,7 @@ fn oddly_sized_heap_extension() {
     unsafe {
         let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 16);
         heap.extend(17);
-        assert_eq!(1, heap.holes.pending_extend);
+        assert_eq!(1, heap.holes[0].pending_extend);
         assert_eq!(16 + 16, heap.size());
     }
 }
@@ -607,11 +607,11 @@ fn extend_odd_size() {
     static mut HEAP: [u64; 6] = [0; 6];
     unsafe {
         let mut heap = Heap::new(HEAP.as_mut_ptr().cast(), 17);
-        assert_eq!(1, heap.holes.pending_extend);
+        assert_eq!(1, heap.holes[0].pending_extend);
         heap.extend(16);
-        assert_eq!(1, heap.holes.pending_extend);
+        assert_eq!(1, heap.holes[0].pending_extend);
         heap.extend(15);
-        assert_eq!(0, heap.holes.pending_extend);
+        assert_eq!(0, heap.holes[0].pending_extend);
         assert_eq!(17 + 16 + 15, heap.size());
     }
 }
