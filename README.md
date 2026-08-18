@@ -31,11 +31,11 @@ pub fn init_heap() {
 ## Features
 
 - **`use_spin`** (default): Provide a `LockedHeap` type that implements the [`GlobalAlloc`] trait by using a spinlock.
-- **`alloc_ref`**: Provide an implementation of the unstable [`AllocRef`] trait; requires nightly Rust.
-    - Warning: The `AllocRef` trait is still regularly changed on the Rust side, so expect some regular breakage when using this feature.
+- **`alloc_ref`**: Provide an implementation of the unstable [`Allocator`] trait; requires nightly Rust.
+    - Warning: The `Allocator` trait is still regularly changed on the Rust side, so expect some regular breakage when using this feature.
 
 [`GlobalAlloc`]: https://doc.rust-lang.org/nightly/core/alloc/trait.GlobalAlloc.html
-[`AllocRef`]: https://doc.rust-lang.org/nightly/core/alloc/trait.AllocRef.html
+[`Allocator`]: https://doc.rust-lang.org/nightly/core/alloc/trait.Allocator.html
 
 ## License
 This crate is dual-licensed under MIT or the Apache License (Version 2.0). See LICENSE-APACHE and LICENSE-MIT for details.
