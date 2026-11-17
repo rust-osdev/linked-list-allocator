@@ -35,6 +35,14 @@ struct HoleInfo {
     size: usize,
 }
 
+/// The parts that a hole is split into in order to serve an allocation.
+#[derive(Debug, Clone, Copy)]
+struct HoleSplit {
+    front_padding: Option<HoleInfo>,
+    alloc_ptr: *mut u8,
+    back_padding: Option<HoleInfo>,
+}
+
 impl Cursor {
     fn next(mut self) -> Option<Self> {
         unsafe {
@@ -58,95 +66,19 @@ impl Cursor {
     // to accomodate any new holes and allocation. On error, it returns the cursor
     // unmodified, and has made no changes to the linked list of holes.
     fn split_current(self, required_layout: Layout) -> Result<(*mut u8, usize), Self> {
-        let front_padding;
-        let alloc_ptr;
-        let alloc_size;
-        let back_padding;
-
-        // Here we create a scope, JUST to make sure that any created references do not
-        // live to the point where we start doing pointer surgery below.
-        {
-            let hole_size = self.current().size;
-            let hole_addr_u8 = self.hole.as_ptr().cast::<u8>();
-            let required_size = required_layout.size();
-            let required_align = required_layout.align();
-
-            // Quick check: If the new item is larger than the current hole, it's never gunna
-            // work. Go ahead and bail early to save ourselves some math.
-            if hole_size < required_size {
-                return Err(self);
-            }
-
-            // Attempt to fracture the current hole into the following parts:
-            // ([front_padding], allocation, [back_padding])
-            //
-            // The paddings are optional, and only placed if required.
-            //
-            // First, figure out if front padding is necessary. This would be necessary if the new
-            // allocation has a larger alignment requirement than the current hole, and we didn't get
-            // lucky that the current position was well-aligned enough for the new item.
-            let aligned_addr = if hole_addr_u8 == align_up(hole_addr_u8, required_align) {
-                // hole has already the required alignment, no front padding is needed.
-                front_padding = None;
-                hole_addr_u8
-            } else {
-                // Unfortunately, we did not get lucky. Instead: Push the "starting location" FORWARD the size
-                // of a hole node, to guarantee there is at least enough room for the hole header, and
-                // potentially additional space.
-                let new_start = hole_addr_u8.wrapping_add(HoleList::min_size());
-
-                let aligned_addr = align_up(new_start, required_align);
-                front_padding = Some(HoleInfo {
-                    // Our new front padding will exist at the same location as the previous hole,
-                    // it will just have a smaller size after we have chopped off the "tail" for
-                    // the allocation.
-                    addr: hole_addr_u8,
-                    size: (aligned_addr as usize) - (hole_addr_u8 as usize),
-                });
-                aligned_addr
-            };
-
-            // Okay, now that we found space, we need to see if the decisions we just made
-            // ACTUALLY fit in the previous hole space
-            let allocation_end = aligned_addr.wrapping_add(required_size);
-            let hole_end = hole_addr_u8.wrapping_add(hole_size);
-
-            if allocation_end > hole_end {
-                // hole is too small
-                return Err(self);
-            }
-
-            // Yes! We have successfully placed our allocation as well.
-            alloc_ptr = aligned_addr;
-            alloc_size = required_size;
-
-            // Okay, time to move onto the back padding.
-            let back_padding_size = hole_end as usize - allocation_end as usize;
-            back_padding = if back_padding_size == 0 {
-                None
-            } else {
-                // NOTE: Because we always use `HoleList::align_layout`, the size of
-                // the new allocation is always "rounded up" to cover any partial gaps that
-                // would have occurred. For this reason, we DON'T need to "round up"
-                // to account for an unaligned hole spot.
-                let hole_layout = Layout::new::<Hole>();
-                let back_padding_start = align_up(allocation_end, hole_layout.align());
-                let back_padding_end = back_padding_start.wrapping_add(hole_layout.size());
-
-                // Will the proposed new back padding actually fit in the old hole slot?
-                if back_padding_end <= hole_end {
-                    // Yes, it does! Place a back padding node
-                    Some(HoleInfo {
-                        addr: back_padding_start,
-                        size: back_padding_size,
-                    })
-                } else {
-                    // No, it does not. We don't want to leak any heap bytes, so we
-                    // consider this hole unsuitable for the requested allocation.
-                    return Err(self);
-                }
-            };
-        }
+        // The split is computed by a separate function, to make sure that any created
+        // references do not live to the point where we start doing pointer surgery below.
+        let hole_addr_u8 = self.hole.as_ptr().cast::<u8>();
+        let hole_size = self.current().size;
+        let HoleSplit {
+            front_padding,
+            alloc_ptr,
+            back_padding,
+        } = match split_hole(hole_addr_u8, hole_size, required_layout) {
+            Some(split) => split,
+            None => return Err(self),
+        };
+        let alloc_size = required_layout.size();
 
         ////////////////////////////////////////////////////////////////////////////
         // This is where we actually perform surgery on the linked list.
@@ -218,6 +150,120 @@ impl Cursor {
         // Well that went swimmingly! Hand off the allocation, with surgery performed successfully!
         Ok((alloc_ptr, alloc_size))
     }
+}
+
+/// Computes how the hole at `hole_addr_u8` with size `hole_size` needs to be split up in
+/// order to serve an allocation with the given layout.
+///
+/// Returns `None` if the hole is not suitable for the allocation. This function only does
+/// address calculations, it never reads from or writes to the hole.
+fn split_hole(
+    hole_addr_u8: *mut u8,
+    hole_size: usize,
+    required_layout: Layout,
+) -> Option<HoleSplit> {
+    let front_padding;
+    let required_size = required_layout.size();
+    let required_align = required_layout.align();
+
+    // Quick check: If the new item is larger than the current hole, it's never gunna
+    // work. Go ahead and bail early to save ourselves some math.
+    if hole_size < required_size {
+        return None;
+    }
+
+    // Attempt to fracture the current hole into the following parts:
+    // ([front_padding], allocation, [back_padding])
+    //
+    // The paddings are optional, and only placed if required.
+    //
+    // First, figure out if front padding is necessary. This would be necessary if the new
+    // allocation has a larger alignment requirement than the current hole, and we didn't get
+    // lucky that the current position was well-aligned enough for the new item.
+    let aligned_addr = if hole_addr_u8 == align_up(hole_addr_u8, required_align) {
+        // hole has already the required alignment, no front padding is needed.
+        front_padding = None;
+        hole_addr_u8
+    } else {
+        // Unfortunately, we did not get lucky. Instead: Push the "starting location" FORWARD the size
+        // of a hole node, to guarantee there is at least enough room for the hole header, and
+        // potentially additional space.
+        //
+        // The aligned address might lie behind the end of the address space, in which case
+        // the hole is not suitable.
+        let new_start = checked_add(hole_addr_u8, HoleList::min_size())?;
+
+        let aligned_addr = checked_align_up(new_start, required_align)?;
+        front_padding = Some(HoleInfo {
+            // Our new front padding will exist at the same location as the previous hole,
+            // it will just have a smaller size after we have chopped off the "tail" for
+            // the allocation.
+            addr: hole_addr_u8,
+            size: (aligned_addr as usize) - (hole_addr_u8 as usize),
+        });
+        aligned_addr
+    };
+
+    // Okay, now that we found space, we need to see if the decisions we just made
+    // ACTUALLY fit in the previous hole space. The aligned address might be far behind the
+    // hole, so we need to make sure that the calculation does not wrap around.
+    let allocation_end = checked_add(aligned_addr, required_size)?;
+    let hole_end = hole_addr_u8.wrapping_add(hole_size);
+
+    if allocation_end > hole_end {
+        // hole is too small
+        return None;
+    }
+
+    // Okay, time to move onto the back padding.
+    let back_padding_size = hole_end as usize - allocation_end as usize;
+    let back_padding = if back_padding_size == 0 {
+        None
+    } else {
+        // NOTE: Because we always use `HoleList::align_layout`, the size of
+        // the new allocation is always "rounded up" to cover any partial gaps that
+        // would have occurred. For this reason, we DON'T need to "round up"
+        // to account for an unaligned hole spot.
+        let hole_layout = Layout::new::<Hole>();
+        let back_padding_start = checked_align_up(allocation_end, hole_layout.align())?;
+        let back_padding_end = checked_add(back_padding_start, hole_layout.size())?;
+
+        // Will the proposed new back padding actually fit in the old hole slot?
+        if back_padding_end <= hole_end {
+            // Yes, it does! Place a back padding node
+            Some(HoleInfo {
+                addr: back_padding_start,
+                size: back_padding_size,
+            })
+        } else {
+            // No, it does not. We don't want to leak any heap bytes, so we
+            // consider this hole unsuitable for the requested allocation.
+            return None;
+        }
+    };
+
+    // Yes! We have successfully placed our allocation as well.
+    Some(HoleSplit {
+        front_padding,
+        alloc_ptr: aligned_addr,
+        back_padding,
+    })
+}
+
+/// Offsets the given pointer by `count` bytes.
+///
+/// Returns `None` if the resulting address would lie behind the end of the address space.
+fn checked_add(ptr: *mut u8, count: usize) -> Option<*mut u8> {
+    (ptr as usize)
+        .checked_add(count)
+        .map(|_| ptr.wrapping_add(count))
+}
+
+/// Align upwards like [`align_up`].
+///
+/// Returns `None` if the aligned address would lie behind the end of the address space.
+fn checked_align_up(addr: *mut u8, align: usize) -> Option<*mut u8> {
+    checked_add(addr, addr.align_offset(align))
 }
 
 // See if we can extend this hole towards the end of the allocation region
@@ -681,10 +727,74 @@ fn deallocate(list: &mut HoleList, addr: *mut u8, size: usize) {
 
 #[cfg(test)]
 pub mod test {
-    use super::HoleList;
+    use super::{split_hole, HoleList};
     use crate::{align_down_size, test::new_heap};
     use core::mem::size_of;
     use std::{alloc::Layout, convert::TryInto, prelude::v1::*, ptr::NonNull};
+
+    /// Returns the address that is `offset` bytes below the end of the address space.
+    ///
+    /// The returned pointer must not be dereferenced, it is only useful for testing
+    /// address calculations.
+    fn below_address_space_end(offset: usize) -> *mut u8 {
+        core::ptr::null_mut::<u8>().wrapping_sub(offset)
+    }
+
+    /// A hole close to the end of the address space can still be split normally, as
+    /// long as the allocation fits.
+    #[test]
+    fn split_hole_near_address_space_end() {
+        let hole_addr = below_address_space_end(0x10000 - 8);
+        let hole_size = 0x8000;
+        let layout = Layout::from_size_align(64, 0x1000).unwrap();
+
+        let split = split_hole(hole_addr, hole_size, layout).unwrap();
+
+        assert_eq!(split.alloc_ptr, below_address_space_end(0xf000));
+        let front_padding = split.front_padding.unwrap();
+        assert_eq!(front_padding.addr, hole_addr);
+        assert_eq!(front_padding.size, 0x1000 - 8);
+        let back_padding = split.back_padding.unwrap();
+        assert_eq!(back_padding.addr, below_address_space_end(0xf000 - 64));
+        assert_eq!(back_padding.size, hole_size - (0x1000 - 8) - 64);
+    }
+
+    /// The next address with the required alignment lies behind the end of the
+    /// address space, so the hole is not suitable.
+    #[test]
+    fn split_hole_alignment_exceeds_address_space() {
+        let hole_addr = below_address_space_end(0x10000 - 8);
+        let hole_size = 0x1000;
+        let layout = Layout::from_size_align(16, 0x10000).unwrap();
+
+        assert!(split_hole(hole_addr, hole_size, layout).is_none());
+    }
+
+    /// The aligned start address is still valid, but the allocation would reach
+    /// behind the end of the address space, so the hole is not suitable.
+    #[test]
+    fn split_hole_allocation_end_exceeds_address_space() {
+        let hole_addr = below_address_space_end(0x10000 - 8);
+        // the hole ends 8 bytes below the end of the address space
+        let hole_size = 0x10000 - 16;
+        let layout = Layout::from_size_align(0xa000, 0x8000).unwrap();
+
+        assert!(split_hole(hole_addr, hole_size, layout).is_none());
+    }
+
+    /// The hole node for the back padding would reach behind the end of the address
+    /// space (and behind the end of the hole), so the hole is not suitable.
+    #[test]
+    fn split_hole_back_padding_exceeds_address_space() {
+        let hole_addr = below_address_space_end(0x1000);
+        // the hole ends one `usize` below the end of the address space
+        let hole_size = 0x1000 - size_of::<usize>();
+        // leaves one `usize` of back padding, which is too small for a hole node
+        let layout =
+            Layout::from_size_align(hole_size - size_of::<usize>(), size_of::<usize>()).unwrap();
+
+        assert!(split_hole(hole_addr, hole_size, layout).is_none());
+    }
 
     #[test]
     fn cursor() {
