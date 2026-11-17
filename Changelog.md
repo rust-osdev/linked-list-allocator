@@ -1,5 +1,7 @@
 # Unreleased
 
+- Fix pointer overflows when splitting holes near the end of the address space ([#93](https://github.com/rust-osdev/linked-list-allocator/pull/93))
+
 # 0.10.6 – 2026-04-14
 
 - Fix potential panic due to huge layout ([#79](https://github.com/rust-osdev/linked-list-allocator/pull/79))
